@@ -201,7 +201,8 @@ autotools_build() {
 # components after this one) and $DESTDIR (the artifact).
 #   - everything must be under /usr/X11;
 #   - libtool .la files and docs are dropped (man pages are kept);
-#   - .pc files from share/pkgconfig move to lib/pkgconfig;
+#   - .pc files from share/pkgconfig and libdata/pkgconfig move to
+#     lib/pkgconfig;
 #   - no .pc file may name /usr/local or a build-host path.
 stage() {
     local name="$1" x="$COMP_ROOT$X_PREFIX" stray f
@@ -210,11 +211,14 @@ stage() {
     [ -z "$stray" ] || fail "$name installed outside $X_PREFIX: $stray"
     find "$x" -name '*.la' -delete
     rm -rf "$x/share/doc"
-    if [ -d "$x/share/pkgconfig" ]; then
+    # meson puts a library's .pc in libdata/pkgconfig when host_machine is
+    # freebsd (the base layout), arch-independent ones in share/pkgconfig.
+    for d in share/pkgconfig libdata/pkgconfig; do
+        [ -d "$x/$d" ] || continue
         mkdir -p "$x/lib/pkgconfig"
-        mv "$x"/share/pkgconfig/*.pc "$x/lib/pkgconfig/"
-        rmdir "$x/share/pkgconfig"
-    fi
+        mv "$x/$d"/*.pc "$x/lib/pkgconfig/"
+        rmdir "$x/$d"
+    done
     for f in "$x"/lib/pkgconfig/*.pc; do
         [ -e "$f" ] || continue
         grep -q "^prefix=$X_PREFIX\$" "$f" || fail "$(basename "$f"): prefix is not $X_PREFIX"

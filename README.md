@@ -87,9 +87,9 @@ For each component, in `COMPONENTS` order, it:
    - **autotools** in `--host=<triple>` mode with
      `CONFIG_SITE=cross/autotools/<arch>.site`, `--with-sysroot`, shared only;
 4. checks and tidies the install (all of it under `/usr/X11`; no `.la` files or
-   docs; `.pc` files moved from `share/pkgconfig` to `lib/pkgconfig`; no `.pc`
-   naming `/usr/local` or a build path), then copies it into the sysroot, so
-   later components find it, and into `DESTDIR`.
+   docs; `.pc` files moved from `share/pkgconfig` or `libdata/pkgconfig` to
+   `lib/pkgconfig`; no `.pc` naming `/usr/local` or a build path), then copies
+   it into the sysroot, so later components find it, and into `DESTDIR`.
 
 pkgconf only searches the sysroot (`/usr/X11/lib/pkgconfig`, then
 `/usr/libdata/pkgconfig`) with `PKG_CONFIG_SYSROOT_DIR` set, so nothing from
