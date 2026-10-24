@@ -336,15 +336,14 @@ build_xtrans() {
 # node belongs to the device that owns it, not to hw.dri.<minor - 128>).
 #
 # Components follow Mesa's drivers (E23 D6), per arch:
-#   amd64  amdgpu (radeonsi) and radeon (r600, the ati DDX); nouveau, which
-#          has no extra dependencies, for a nouveau kernel driver later.
+#   amd64  amdgpu (radeonsi) and radeon (r600, the ati DDX).
 #   arm64  vc4 (headers and .pc only). v3d has no libdrm component; its uapi
 #          header comes from Mesa's include/drm-uapi.
 # Off everywhere: intel (libdrm_intel needs libpciaccess, and only gallium
 # i915 and the intel DDX use it; iris and crocus need just i915_drm.h, which
 # core libdrm installs), vmwgfx (no kernel driver), omap, exynos, freedreno,
-# tegra and etnaviv (no kernel drivers), the test programs, cairo, valgrind,
-# udev and the man pages (rst2man is not in the toolchain image).
+# tegra, etnaviv and nouveau (no kernel drivers), the test programs, cairo,
+# valgrind, udev and the man pages (rst2man is not in the toolchain image).
 build_libdrm() {
     comp "libdrm [meson cross]"
     fresh_dirs libdrm
@@ -355,7 +354,7 @@ build_libdrm() {
         arm64) vc4=enabled ;;
     esac
     meson_build \
-        -Damdgpu="$amd" -Dradeon="$amd" -Dnouveau="$amd" -Dvc4="$vc4" \
+        -Damdgpu="$amd" -Dradeon="$amd" -Dnouveau=disabled -Dvc4="$vc4" \
         -Dintel=disabled -Dvmwgfx=disabled \
         -Domap=disabled -Dexynos=disabled -Dfreedreno=disabled \
         -Dfreedreno-kgsl=false -Dtegra=disabled -Detnaviv=disabled \
@@ -380,9 +379,6 @@ build_libdrm() {
                 needed_check "$x/lib/libdrm_$lib.so.1" libdrm.so.2
                 pc_check "libdrm_$lib" "$VERSION"
             done
-            soname_check "$x/lib/libdrm_nouveau.so.2" libdrm_nouveau.so.2
-            needed_check "$x/lib/libdrm_nouveau.so.2" libdrm.so.2
-            pc_check libdrm_nouveau "$VERSION"
             test -f "$x/share/libdrm/amdgpu.ids" || fail "libdrm/amdgpu.ids not staged"
             ;;
         arm64)
@@ -390,9 +386,11 @@ build_libdrm() {
             pc_check libdrm_vc4 "$VERSION"
             ;;
     esac
-    if ls "$x"/lib/libdrm_intel* "$x"/lib/libdrm_freedreno* "$x"/lib/libdrm_etnaviv* >/dev/null 2>&1; then
-        fail "a disabled libdrm component was built"
-    fi
+    for lib in intel freedreno etnaviv nouveau; do
+        if ls "$x"/lib/libdrm_"$lib"* >/dev/null 2>&1; then
+            fail "disabled libdrm component $lib was built"
+        fi
+    done
 }
 
 # =============================================================================

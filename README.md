@@ -113,7 +113,7 @@ In build order (E23 audit 3, section 2.2).
 |---|---|---|---|---|
 | `xorgproto` | 2026.1 | meson | protocol headers, `.pc` files | nextbsd/nextbsd-xlibs#1 |
 | `xtrans` | 1.6.0 | autotools | `X11/Xtrans/` sources, `xtrans.pc`, `xtrans.m4` | nextbsd/nextbsd-xlibs#1 |
-| `libdrm` | 2.4.134 | meson | `libdrm.so.2`, `xf86drm.h`, `libdrm/` uapi headers; amd64 `libdrm_amdgpu`, `libdrm_radeon`, `libdrm_nouveau`; arm64 `libdrm_vc4` headers. Patched: platform-bus devices, render-node owner (`patches/libdrm/`) | nextbsd/nextbsd-xlibs#2 |
+| `libdrm` | 2.4.134 | meson | `libdrm.so.2`, `xf86drm.h`, `libdrm/` uapi headers; amd64 `libdrm_amdgpu`, `libdrm_radeon`; arm64 `libdrm_vc4` headers. Patched: platform-bus devices, render-node owner (`patches/libdrm/`) | nextbsd/nextbsd-xlibs#2 |
 | `xcb-proto` | 1.17.0 | autotools | XCB protocol XML and `xcbgen`, **sysroot only** (build input for libxcb; not in the artifact) | nextbsd/nextbsd-xlibs#3 |
 | `libXau` | 1.0.12 | meson | `libXau.so.6` | nextbsd/nextbsd-xlibs#3 |
 | `libXdmcp` | 1.1.5 | autotools | `libXdmcp.so.6` | nextbsd/nextbsd-xlibs#3 |
