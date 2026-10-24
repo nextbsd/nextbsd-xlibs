@@ -87,9 +87,9 @@ For each component, in `COMPONENTS` order, it:
    - **autotools** in `--host=<triple>` mode with
      `CONFIG_SITE=cross/autotools/<arch>.site`, `--with-sysroot`, shared only;
 4. checks and tidies the install (all of it under `/usr/X11`; no `.la` files or
-   docs; `.pc` files moved from `share/pkgconfig` to `lib/pkgconfig`; no `.pc`
-   naming `/usr/local` or a build path), then copies it into the sysroot, so
-   later components find it, and into `DESTDIR`.
+   docs; `.pc` files moved from `share/pkgconfig` or `libdata/pkgconfig` to
+   `lib/pkgconfig`; no `.pc` naming `/usr/local` or a build path), then copies
+   it into the sysroot, so later components find it, and into `DESTDIR`.
 
 pkgconf only searches the sysroot (`/usr/X11/lib/pkgconfig`, then
 `/usr/libdata/pkgconfig`) with `PKG_CONFIG_SYSROOT_DIR` set, so nothing from
@@ -109,10 +109,10 @@ In build order (E23 audit 3, section 2.2).
 |---|---|---|---|---|
 | `xorgproto` | 2026.1 | meson | protocol headers, `.pc` files | nextbsd/nextbsd-xlibs#1 |
 | `xtrans` | 1.6.0 | autotools | `X11/Xtrans/` sources, `xtrans.pc`, `xtrans.m4` | nextbsd/nextbsd-xlibs#1 |
+| `libdrm` | 2.4.134 | meson | `libdrm.so.2`, `xf86drm.h`, `libdrm/` uapi headers; amd64 `libdrm_amdgpu`, `libdrm_radeon`, `libdrm_nouveau`; arm64 `libdrm_vc4` headers. Patched: platform-bus devices, render-node owner (`patches/libdrm/`) | nextbsd/nextbsd-xlibs#2 |
 
-Next: libdrm 2.4.134 (nextbsd/nextbsd-xlibs#2) and the client libraries from
-libXau onwards (nextbsd/nextbsd-xlibs#3). Licences are per component; see
-`NOTICE.md`. The top-level `LICENSE` (BSD-2) covers only this repo's harness.
+Next: the client libraries from libXau onwards (nextbsd/nextbsd-xlibs#3).
+Licences are per component; see `NOTICE.md`. The top-level `LICENSE` (BSD-2) covers only this repo's harness.
 
 ## CI, artifact, package
 

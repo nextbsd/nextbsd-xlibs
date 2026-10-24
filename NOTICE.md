@@ -19,3 +19,4 @@ The top-level **`LICENSE` (BSD 2-Clause)** covers only what this repo authors:
 |---|---|---|---|
 | `xorgproto` | X.Org, `xorg/proto/xorgproto` | 2026.1 | MIT/X11-style, per protocol (`COPYING-*` in the tarball) |
 | `xtrans` | X.Org, `xorg/lib/libxtrans` | 1.6.0 | MIT/X11-style (`COPYING` in the tarball) |
+| `libdrm` | freedesktop.org, `mesa/libdrm` | 2.4.134 | MIT/X11-style, in each source file's header (the tarball has no `COPYING`) |
