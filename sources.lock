@@ -12,3 +12,5 @@
 
 xorgproto  2026.1  f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8290  https://xorg.freedesktop.org/archive/individual/proto/xorgproto-2026.1.tar.xz
 xtrans     1.6.0   faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92  https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.6.0.tar.xz
+# libdrm: SHA-256 also matches FreeBSD ports' graphics/libdrm/distinfo.
+libdrm     2.4.134 ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95  https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz

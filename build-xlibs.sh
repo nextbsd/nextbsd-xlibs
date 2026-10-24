@@ -274,13 +274,81 @@ build_xtrans() {
     pc_check xtrans "$VERSION"
 }
 
+# libdrm — the DRM userspace library (libdrm.so.2) and the kernel uapi headers
+# under include/libdrm, for Mesa (GBM, EGL, the gallium drivers) and the
+# server's modesetting driver. meson.
+#
+# patches/libdrm: the nextbsd-ports patches (platform-bus devices, so vc4 and
+# v3d are enumerated; ETIME in libsync.h) and the render-node fix (a render
+# node belongs to the device that owns it, not to hw.dri.<minor - 128>).
+#
+# Components follow Mesa's drivers (E23 D6), per arch:
+#   amd64  amdgpu (radeonsi) and radeon (r600, the ati DDX); nouveau, which
+#          has no extra dependencies, for a nouveau kernel driver later.
+#   arm64  vc4 (headers and .pc only). v3d has no libdrm component; its uapi
+#          header comes from Mesa's include/drm-uapi.
+# Off everywhere: intel (libdrm_intel needs libpciaccess, and only gallium
+# i915 and the intel DDX use it; iris and crocus need just i915_drm.h, which
+# core libdrm installs), vmwgfx (no kernel driver), omap, exynos, freedreno,
+# tegra and etnaviv (no kernel drivers), the test programs, cairo, valgrind,
+# udev and the man pages (rst2man is not in the toolchain image).
+build_libdrm() {
+    comp "libdrm [meson cross]"
+    fresh_dirs libdrm
+    fetch libdrm
+    local amd=disabled vc4=disabled
+    case "$T" in
+        amd64) amd=enabled ;;
+        arm64) vc4=enabled ;;
+    esac
+    meson_build \
+        -Damdgpu="$amd" -Dradeon="$amd" -Dnouveau="$amd" -Dvc4="$vc4" \
+        -Dintel=disabled -Dvmwgfx=disabled \
+        -Domap=disabled -Dexynos=disabled -Dfreedreno=disabled \
+        -Dfreedreno-kgsl=false -Dtegra=disabled -Detnaviv=disabled \
+        -Dtests=false -Dinstall-test-programs=false -Dcairo-tests=disabled \
+        -Dvalgrind=disabled -Dudev=false -Dman-pages=disabled
+    stage libdrm
+    local x="$DESTDIR$X_PREFIX" lib
+    test -f "$x/include/xf86drm.h" || fail "xf86drm.h not staged"
+    test -f "$x/include/libdrm/drm.h" || fail "libdrm/drm.h not staged"
+    test -f "$x/include/libdrm/i915_drm.h" || fail "libdrm/i915_drm.h not staged"
+    soname_check "$x/lib/libdrm.so.2" libdrm.so.2
+    # The FreeBSD branch of xf86drm.c, with the platform-bus and render-node
+    # patches, is what was compiled.
+    grep -q -a -F 'hw.dri.%d.name' "$x/lib/libdrm.so.2" \
+        || fail "libdrm.so.2 lacks the render-node lookup (patches/libdrm not built in?)"
+    note "render-node lookup compiled in"
+    pc_check libdrm "$VERSION"
+    case "$T" in
+        amd64)
+            for lib in amdgpu radeon; do
+                soname_check "$x/lib/libdrm_$lib.so.1" "libdrm_$lib.so.1"
+                needed_check "$x/lib/libdrm_$lib.so.1" libdrm.so.2
+                pc_check "libdrm_$lib" "$VERSION"
+            done
+            soname_check "$x/lib/libdrm_nouveau.so.2" libdrm_nouveau.so.2
+            needed_check "$x/lib/libdrm_nouveau.so.2" libdrm.so.2
+            pc_check libdrm_nouveau "$VERSION"
+            test -f "$x/share/libdrm/amdgpu.ids" || fail "libdrm/amdgpu.ids not staged"
+            ;;
+        arm64)
+            test -f "$x/include/libdrm/vc4_packet.h" || fail "libdrm/vc4_packet.h not staged"
+            pc_check libdrm_vc4 "$VERSION"
+            ;;
+    esac
+    if ls "$x"/lib/libdrm_intel* "$x"/lib/libdrm_freedreno* "$x"/lib/libdrm_etnaviv* >/dev/null 2>&1; then
+        fail "a disabled libdrm component was built"
+    fi
+}
+
 # =============================================================================
 # driver
 # =============================================================================
 # Add a component: pin it in sources.lock, write build_<name>() above (hyphens
 # in the name become underscores in the function), put its patches, if any, in
 # patches/<name>/ with a series file, and append <name> here in build order.
-COMPONENTS="xorgproto xtrans"
+COMPONENTS="xorgproto xtrans libdrm"
 
 if [ $# -gt 0 ]; then
     for c in "$@"; do
