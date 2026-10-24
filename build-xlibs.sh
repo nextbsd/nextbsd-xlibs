@@ -254,8 +254,10 @@ build_xorgproto() {
     local x="$DESTDIR$X_PREFIX"
     test -f "$x/include/X11/X.h" || fail "X11/X.h not staged"
     test -f "$x/include/X11/extensions/randr.h" || fail "X11/extensions/randr.h not staged"
+    # xorgproto installs one .pc per protocol (xproto, randrproto, ...), none
+    # named after the package itself.
     pc_check xproto
-    pc_check xorgproto "$VERSION"
+    pc_check randrproto
 }
 
 # xtrans — the X transport sources, included by libX11, libICE, libFS and the
