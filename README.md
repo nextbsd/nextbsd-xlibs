@@ -35,7 +35,8 @@ the Mesa and XLibre repos don't depend on each other.
    (`libX11.so.6`, `libdrm.so.2`): headers in `/usr/X11/include`, libraries in
    `/usr/X11/lib`, `.pc` files in `/usr/X11/lib/pkgconfig`. Nothing goes in
    `/usr/local`, and nothing here ships `/etc`; configuration belongs in
-   `nextbsd-overlays`.
+   `nextbsd-overlays`. (fontconfig's own defaults live in `/usr/X11/etc/fonts`,
+   inside the prefix; see [fontconfig](#fontconfig).)
 5. **Only the NextBSD base sysroot is linked against** (compat's `continuous`
    base), never `nextbsd-userland`. Build tools come from the toolchain image
    and never ship.
@@ -86,10 +87,13 @@ For each component, in `COMPONENTS` order, it:
      libraries, no wrap downloads;
    - **autotools** in `--host=<triple>` mode with
      `CONFIG_SITE=cross/autotools/<arch>.site`, `--with-sysroot`, shared only;
-4. checks and tidies the install (all of it under `/usr/X11`; no `.la` files or
-   docs; `.pc` files moved from `share/pkgconfig` or `libdata/pkgconfig` to
-   `lib/pkgconfig`; no `.pc` naming `/usr/local` or a build path), then copies
-   it into the sysroot, so later components find it, and into `DESTDIR`.
+4. checks and tidies the install (all of it under `/usr/X11`; nothing that
+   would replace a file of the base; no `.la` files or docs; `.pc` files moved
+   from `share/pkgconfig` or `libdata/pkgconfig` to `lib/pkgconfig`; no `.pc`
+   naming `/usr/local` or a build path), then copies it into the sysroot, so
+   later components find it, and into `DESTDIR`;
+5. checks each library's upstream soname and the libraries it links
+   (`llvm-readelf -d`), and that its `.pc` resolves through pkgconf.
 
 pkgconf only searches the sysroot (`/usr/X11/lib/pkgconfig`, then
 `/usr/libdata/pkgconfig`) with `PKG_CONFIG_SYSROOT_DIR` set, so nothing from
@@ -110,9 +114,70 @@ In build order (E23 audit 3, section 2.2).
 | `xorgproto` | 2026.1 | meson | protocol headers, `.pc` files | nextbsd/nextbsd-xlibs#1 |
 | `xtrans` | 1.6.0 | autotools | `X11/Xtrans/` sources, `xtrans.pc`, `xtrans.m4` | nextbsd/nextbsd-xlibs#1 |
 | `libdrm` | 2.4.134 | meson | `libdrm.so.2`, `xf86drm.h`, `libdrm/` uapi headers; amd64 `libdrm_amdgpu`, `libdrm_radeon`, `libdrm_nouveau`; arm64 `libdrm_vc4` headers. Patched: platform-bus devices, render-node owner (`patches/libdrm/`) | nextbsd/nextbsd-xlibs#2 |
+| `xcb-proto` | 1.17.0 | autotools | XCB protocol XML and `xcbgen`, **sysroot only** (build input for libxcb; not in the artifact) | nextbsd/nextbsd-xlibs#3 |
+| `libXau` | 1.0.12 | meson | `libXau.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libXdmcp` | 1.1.5 | autotools | `libXdmcp.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libxcb` | 1.17.0 | autotools | `libxcb.so.1` and the extension libraries (`libxcb-render.so.0`, `-shm`, `-randr`, `-xkb.so.1`, `-xinput`, `-dri3`, `-present`, ...) | nextbsd/nextbsd-xlibs#3 |
+| `libX11` | 1.8.14 | autotools | `libX11.so.6`, `libX11-xcb.so.1`, `share/X11/locale` | nextbsd/nextbsd-xlibs#3 |
+| `libXext` | 1.3.7 | autotools | `libXext.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libXfixes` | 6.0.2 | meson | `libXfixes.so.3` | nextbsd/nextbsd-xlibs#3 |
+| `libXrender` | 0.9.13 | meson | `libXrender.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libXrandr` | 1.5.5 | meson | `libXrandr.so.2` | nextbsd/nextbsd-xlibs#3 |
+| `libXi` | 1.8.4 | autotools | `libXi.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libXtst` | 1.2.6 | autotools | `libXtst.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libXinerama` | 1.1.6 | meson | `libXinerama.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libXxf86vm` | 1.1.7 | meson | `libXxf86vm.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libxshmfence` | 1.3.3 | autotools | `libxshmfence.so.1` (pthread primitives, `memfd_create`) | nextbsd/nextbsd-xlibs#3 |
+| `libICE` | 1.1.2 | autotools | `libICE.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libSM` | 1.2.6 | autotools | `libSM.so.6` (`uuid_create` from libc) | nextbsd/nextbsd-xlibs#3 |
+| `libXt` | 1.3.1 | autotools | `libXt.so.6` | nextbsd/nextbsd-xlibs#3 |
+| `libXmu` | 1.3.1 | autotools | `libXmu.so.6`, `libXmuu.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libxkbfile` | 1.2.0 | meson | `libxkbfile.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libXcursor` | 1.2.3 | autotools | `libXcursor.so.1` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `libXcomposite` | 0.4.7 | meson | `libXcomposite.so.1` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `xcb-util` | 0.4.1 | autotools | `libxcb-util.so.1` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `xcb-util-wm` | 0.4.2 | autotools | `libxcb-icccm.so.4`, `libxcb-ewmh.so.2` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `xcb-util-image` | 0.4.1 | autotools | `libxcb-image.so.0` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `xcb-util-renderutil` | 0.3.10 | autotools | `libxcb-render-util.so.0` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `xcb-util-cursor` | 0.1.6 | autotools | `libxcb-cursor.so.0` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `pixman` | 0.46.4 | meson | `libpixman-1.so.0` (moved here from nextbsd-xlibre, E24 Q5) | nextbsd/nextbsd-xlibs#3 (E24) |
+| `expat` | 2.9.0 | autotools | `libexpat.so.1`, for fontconfig (not base's private `libbsdxml`) | nextbsd/nextbsd-xlibs#3 (E24) |
+| `freetype` | 2.15.0 | meson | `libfreetype.so.6`; base zlib and bzip2; no libpng, harfbuzz or brotli | nextbsd/nextbsd-xlibs#3 (E24) |
+| `fontconfig` | 2.18.3 | meson | `libfontconfig.so.1`, `fc-*` tools, `/usr/X11/etc/fonts` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `libXft` | 2.3.9 | meson | `libXft.so.2` | nextbsd/nextbsd-xlibs#3 (E24) |
+| `libfontenc` | 1.1.9 | meson | `libfontenc.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libXfont2` | 2.0.9 | autotools | `libXfont2.so.2` | nextbsd/nextbsd-xlibs#3 |
+| `libxkbcommon` | 1.13.2 | meson | `libxkbcommon.so.0`, `libxkbcommon-x11.so.0` (no tools, Wayland or xkbregistry) | nextbsd/nextbsd-xlibs#3 |
 
-Next: the client libraries from libXau onwards (nextbsd/nextbsd-xlibs#3).
-Licences are per component; see `NOTICE.md`. The top-level `LICENSE` (BSD-2) covers only this repo's harness.
+Licences are per component; see `NOTICE.md`. The top-level `LICENSE` (BSD-2)
+covers only this repo's harness.
+
+Docs and specs (xmlto, fop, xsltproc, asciidoc, doxygen) are off everywhere;
+man pages are kept.
+
+### fontconfig
+
+All of fontconfig's paths are under `/usr/X11`, like the rest of the repo:
+
+| What | Path |
+|---|---|
+| Configuration | `/usr/X11/etc/fonts/fonts.conf`; `conf.d/` links to `/usr/X11/share/fontconfig/conf.avail` |
+| System cache | `/usr/X11/var/cache/fontconfig` (where Apple's X11 in `/usr/X11` kept it). Per-user caches go in `~/.cache/fontconfig` |
+| Font directories | `/System/Library/Fonts`, `/Local/Library/Fonts`, `/Network/Library/Fonts`, `~/Library/Fonts` (NextBSD's domains; E23 D4 puts fonts in `/System/Library/Fonts`), then `/usr/X11/share/fonts` |
+
+The cache is not built at install time (fc-cache can't run on the build host);
+`fc-cache` is shipped, and creates the cache directory when it first runs.
+`FONTCONFIG_FILE` still overrides the configuration (Gershwin points it at
+`/System/Library/Preferences/fonts.conf`).
+
+### Host build tools
+
+Built on the runner from `sources.lock` and used during the build; never
+shipped.
+
+| Tool | Version | Why |
+|---|---|---|
+| `gperf` (GPL-3.0, build host only) | 3.3 | fontconfig generates its object hash with it. Not in the toolchain image yet; it moves there when the image carries it |
 
 ## CI, artifact, package
 

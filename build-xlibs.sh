@@ -102,6 +102,34 @@ soname_check() {
     note "SONAME ok: $want"
 }
 
+# so_check <soname>...: each staged $X_PREFIX/lib/<soname> exists and carries
+# that soname (the upstream one; libtool and meson name the file after it).
+so_check() {
+    local s
+    for s in "$@"; do
+        [ -e "$DESTDIR$X_PREFIX/lib/$s" ] || fail "$X_PREFIX/lib/$s not staged"
+        soname_check "$DESTDIR$X_PREFIX/lib/$s" "$s"
+    done
+}
+
+# pc_unsysroot <file.pc>: an upstream .pc.in that copies a dependency's
+# pkgconf --cflags into its own Cflags gets the sysroot spelled out
+# (-I$SYSROOT/usr/X11/include). Drop the sysroot prefix so the flag names the
+# target path; stage still refuses any build path left over.
+pc_unsysroot() {
+    local f="$COMP_ROOT$X_PREFIX/lib/pkgconfig/$1"
+    [ -f "$f" ] || fail "pc_unsysroot: $1 not installed"
+    sed -i "s#-I$SYSROOT/#-I/#g; s#-L$SYSROOT/#-L/#g" "$f"
+    note "$1: sysroot prefix dropped from its flags"
+}
+
+# lib_needs <soname> <needed>...: a staged library links each <needed>.
+lib_needs() {
+    local lib="$DESTDIR$X_PREFIX/lib/$1" n
+    shift
+    for n in "$@"; do needed_check "$lib" "$n"; done
+}
+
 # fetch <name>: download (cached in .build/dl), verify and unpack the pinned
 # tarball, apply the patch series. Sets SRC_DIR and VERSION.
 fetch() {
@@ -197,15 +225,31 @@ autotools_build() {
     )
 }
 
-# stage <name>: tidy and check $COMP_ROOT, then copy it into $SYSROOT (for the
-# components after this one) and $DESTDIR (the artifact).
-#   - everything must be under /usr/X11;
+# The base's own files, listed while the sysroot is still the pristine compat
+# base (before this script has installed anything into its /usr/X11), so stage
+# can refuse a component that would overwrite one. A later partial run reuses
+# the list.
+base_list() {
+    BASE_LIST="$BUILD/base-files-$T.list"
+    mkdir -p "$BUILD"
+    if [ ! -e "$SYSROOT$X_PREFIX" ]; then
+        (cd "$SYSROOT" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort) > "$BASE_LIST"
+    elif [ ! -f "$BASE_LIST" ]; then
+        fail "$SYSROOT$X_PREFIX already exists but $BASE_LIST is missing; start from a fresh compat base"
+    fi
+}
+
+# stage <name> [sysroot-only]: tidy and check $COMP_ROOT, then copy it into
+# $SYSROOT (for the components after this one) and $DESTDIR (the artifact).
+#   - everything must be under /usr/X11, and nothing may replace a base file;
 #   - libtool .la files and docs are dropped (man pages are kept);
 #   - .pc files from share/pkgconfig and libdata/pkgconfig move to
 #     lib/pkgconfig;
 #   - no .pc file may name /usr/local or a build-host path.
+# With sysroot-only, the component is build input for later components and is
+# left out of the artifact (xcb-proto).
 stage() {
-    local name="$1" x="$COMP_ROOT$X_PREFIX" stray f
+    local name="$1" where="${2:-}" x="$COMP_ROOT$X_PREFIX" stray f d clash
     [ -d "$x" ] || fail "$name installed nothing under $X_PREFIX"
     stray=$(cd "$COMP_ROOT" && find . -mindepth 1 ! -path ./usr ! -path ".$X_PREFIX" ! -path ".$X_PREFIX/*")
     [ -z "$stray" ] || fail "$name installed outside $X_PREFIX: $stray"
@@ -227,7 +271,13 @@ stage() {
         fi
     done
     find "$x" -type d -empty -delete
+    clash=$(cd "$COMP_ROOT" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort | LC_ALL=C comm -12 - "$BASE_LIST")
+    [ -z "$clash" ] || fail "$name would replace files of the NextBSD base: $clash"
     (cd "$COMP_ROOT" && tar -cf - .) | (cd "$SYSROOT" && tar -xf -)
+    if [ "$where" = sysroot-only ]; then
+        note "staged $(cd "$COMP_ROOT" && find . ! -type d | wc -l) files (sysroot only, not in the artifact)"
+        return 0
+    fi
     (cd "$COMP_ROOT" && tar -cf - .) | (cd "$DESTDIR" && tar -xf -)
     note "staged $(cd "$COMP_ROOT" && find . ! -type d | wc -l) files"
 }
@@ -236,15 +286,14 @@ stage() {
 # later components will see it (and, if given, at that version).
 pc_check() {
     local mod="$1" want="${2:-}" got
-    got=$(PKG_CONFIG_LIBDIR="$SYSROOT$X_PREFIX/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$SYSROOT" \
+    got=$(PKG_CONFIG_LIBDIR="$SYSROOT$X_PREFIX/lib/pkgconfig:$SYSROOT/usr/libdata/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$SYSROOT" \
           pkgconf --modversion "$mod") || fail "pkgconf cannot resolve $mod"
     [ -z "$want" ] || [ "$got" = "$want" ] || fail "$mod.pc is version $got, expected $want"
     note "pkgconf ok: $mod $got"
 }
 
 # =============================================================================
-# Components, in build order (E23 audit 3, section 2.2). nextbsd-xlibs#3 adds
-# the client libraries after these, and #2 adds libdrm.
+# Components, in build order (E23 audit 3, section 2.2).
 # =============================================================================
 
 # xorgproto — the X11 protocol headers (headers and .pc files only).
@@ -347,25 +396,565 @@ build_libdrm() {
 }
 
 # =============================================================================
+# Host build tools (built on the runner, never shipped)
+# =============================================================================
+# gperf for fontconfig's object hash (and xcb-util-cursor's, should its
+# pre-generated table ever be rebuilt). Pinned in sources.lock and built with
+# the runner's cc until the toolchain image carries it.
+host_gperf() {
+    GPERF="$BUILD/host/bin/gperf"
+    if [ -x "$GPERF" ] && "$GPERF" --version | head -1 | grep -q " $(lock_field gperf version)\$"; then
+        return 0
+    fi
+    comp "gperf $(lock_field gperf version) [host tool]"
+    fetch gperf
+    (
+        cd "$SRC_DIR"
+        ./configure --prefix="$BUILD/host" >/dev/null
+        make $JOBS
+    )
+    mkdir -p "$BUILD/host/bin"
+    install -m 0755 "$SRC_DIR/src/gperf" "$GPERF"
+    note "$("$GPERF" --version | head -1)"
+}
+
+# =============================================================================
+# X client libraries (nextbsd-xlibs#3): E23 audit 3's order, then the tools'
+# libraries, then what GNUstep needs (E24): xcb-util*, libXcursor,
+# libXcomposite, pixman, expat, freetype, fontconfig, libXft.
+# =============================================================================
+
+# Configure switches that keep X.Org autotools packages from building specs and
+# docs (xmlto, fop, xsltproc, asciidoc, doxygen). configure only warns about the
+# ones a package does not have.
+XORG_NODOCS=(--disable-docs --disable-specs --disable-devel-docs
+             --without-xmlto --without-fop --without-xsltproc
+             --without-asciidoc --without-doxygen --without-lint)
+
+# xcb-proto — XCB's protocol XML and the xcbgen Python package that libxcb's
+# code generator runs on the build host. Build input only: staged into the
+# sysroot, not the artifact (audit 3: ".pc/XML in sysroot only"). Its .pc
+# names its directories through ${pc_sysrootdir}, so pkgconf resolves them
+# inside the sysroot.
+build_xcb_proto() {
+    comp "xcb-proto [autotools, build input only]"
+    fresh_dirs xcb-proto
+    fetch xcb-proto
+    autotools_build
+    stage xcb-proto sysroot-only
+    test -f "$SYSROOT$X_PREFIX/share/xcb/xproto.xml" || fail "xcb/xproto.xml not in the sysroot"
+    pc_check xcb-proto "$VERSION"
+}
+
+# libXau — X authorization file routines. meson.
+build_libXau() {
+    comp "libXau [meson cross]"
+    fresh_dirs libXau
+    fetch libXau
+    meson_build
+    stage libXau
+    so_check libXau.so.6
+    pc_check xau "$VERSION"
+}
+
+# libXdmcp — X Display Manager Control Protocol routines. autotools.
+build_libXdmcp() {
+    comp "libXdmcp [autotools cross]"
+    fresh_dirs libXdmcp
+    fetch libXdmcp
+    autotools_build "${XORG_NODOCS[@]}" --disable-unit-tests
+    stage libXdmcp
+    so_check libXdmcp.so.6
+    pc_check xdmcp "$VERSION"
+}
+
+# libxcb — the X C binding and all its extension libraries (render, shm, randr,
+# xkb, xinput, dri3, present, ...). autotools; the code is generated on the
+# build host by xcb-proto's xcbgen. SELinux, Xevie and Xprint stay off
+# (upstream defaults).
+build_libxcb() {
+    comp "libxcb [autotools cross]"
+    fresh_dirs libxcb
+    fetch libxcb
+    autotools_build "${XORG_NODOCS[@]}" --disable-selinux
+    stage libxcb
+    so_check libxcb.so.1 libxcb-render.so.0 libxcb-shm.so.0 libxcb-randr.so.0 \
+             libxcb-xfixes.so.0 libxcb-xkb.so.1 libxcb-xinput.so.0 libxcb-dri2.so.0 \
+             libxcb-dri3.so.0 libxcb-present.so.0 libxcb-sync.so.1 libxcb-glx.so.0
+    lib_needs libxcb.so.1 libXau.so.6 libXdmcp.so.6
+    pc_check xcb "$VERSION"
+    pc_check xcb-xkb "$VERSION"
+}
+
+# libX11 — Xlib, plus libX11-xcb. autotools; makekeys runs on the build host
+# (CC_FOR_BUILD, with the X headers from the sysroot: cross/autotools). The
+# keysym headers are named explicitly: pkgconf does not put the sysroot in
+# front of --variable output. Locale data goes in /usr/X11/share/X11/locale.
+build_libX11() {
+    comp "libX11 [autotools cross]"
+    fresh_dirs libX11
+    fetch libX11
+    autotools_build "${XORG_NODOCS[@]}" --without-perl --without-launchd \
+        --with-keysymdefdir="$SYSROOT$X_PREFIX/include/X11"
+    stage libX11
+    test -f "$DESTDIR$X_PREFIX/share/X11/locale/locale.dir" || fail "X11 locale data not staged"
+    so_check libX11.so.6 libX11-xcb.so.1
+    lib_needs libX11.so.6 libxcb.so.1
+    pc_check x11 "$VERSION"
+    pc_check x11-xcb "$VERSION"
+}
+
+# libXext — common X extensions (shape, sync, shm, ...). autotools.
+build_libXext() {
+    comp "libXext [autotools cross]"
+    fresh_dirs libXext
+    fetch libXext
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libXext
+    so_check libXext.so.6
+    lib_needs libXext.so.6 libX11.so.6
+    pc_check xext "$VERSION"
+}
+
+# libXfixes — XFIXES extension. meson.
+build_libXfixes() {
+    comp "libXfixes [meson cross]"
+    fresh_dirs libXfixes
+    fetch libXfixes
+    meson_build
+    stage libXfixes
+    so_check libXfixes.so.3
+    pc_check xfixes "$VERSION"
+}
+
+# libXrender — RENDER extension. meson.
+build_libXrender() {
+    comp "libXrender [meson cross]"
+    fresh_dirs libXrender
+    fetch libXrender
+    meson_build
+    stage libXrender
+    so_check libXrender.so.1
+    pc_check xrender "$VERSION"
+}
+
+# libXrandr — RandR extension. meson.
+build_libXrandr() {
+    comp "libXrandr [meson cross]"
+    fresh_dirs libXrandr
+    fetch libXrandr
+    meson_build
+    stage libXrandr
+    so_check libXrandr.so.2
+    lib_needs libXrandr.so.2 libXext.so.6 libXrender.so.1
+    pc_check xrandr "$VERSION"
+}
+
+# libXi — X Input extension. autotools.
+build_libXi() {
+    comp "libXi [autotools cross]"
+    fresh_dirs libXi
+    fetch libXi
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libXi
+    so_check libXi.so.6
+    lib_needs libXi.so.6 libXext.so.6
+    pc_check xi "$VERSION"
+}
+
+# libXtst — XTEST and RECORD extensions. autotools.
+build_libXtst() {
+    comp "libXtst [autotools cross]"
+    fresh_dirs libXtst
+    fetch libXtst
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libXtst
+    so_check libXtst.so.6
+    lib_needs libXtst.so.6 libXi.so.6
+    pc_check xtst "$VERSION"
+}
+
+# libXinerama — Xinerama extension. meson.
+build_libXinerama() {
+    comp "libXinerama [meson cross]"
+    fresh_dirs libXinerama
+    fetch libXinerama
+    meson_build
+    stage libXinerama
+    so_check libXinerama.so.1
+    pc_check xinerama "$VERSION"
+}
+
+# libXxf86vm — XFree86-VidModeExtension (Mesa's GLX). meson.
+build_libXxf86vm() {
+    comp "libXxf86vm [meson cross]"
+    fresh_dirs libXxf86vm
+    fetch libXxf86vm
+    meson_build
+    stage libXxf86vm
+    so_check libXxf86vm.so.1
+    pc_check xxf86vm "$VERSION"
+}
+
+# libxshmfence — shared-memory fences for DRI3 (server and Mesa). autotools.
+# No linux/futex.h in the sysroot, so it uses pthread primitives; memfd_create
+# is in NextBSD's libc. The fallback directory is named because configure
+# would otherwise probe the build host's /run/shm and /dev/shm. Its .pc copies
+# xproto's cflags, sysroot and all (pc_unsysroot).
+build_libxshmfence() {
+    comp "libxshmfence [autotools cross]"
+    fresh_dirs libxshmfence
+    fetch libxshmfence
+    autotools_build --with-shared-memory-dir=/tmp
+    pc_unsysroot xshmfence.pc
+    stage libxshmfence
+    so_check libxshmfence.so.1
+    pc_check xshmfence "$VERSION"
+}
+
+# libICE — Inter-Client Exchange (for libSM). autotools.
+build_libICE() {
+    comp "libICE [autotools cross]"
+    fresh_dirs libICE
+    fetch libICE
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libICE
+    so_check libICE.so.6
+    pc_check ice "$VERSION"
+}
+
+# libSM — X Session Management. autotools; uuid_create() from NextBSD's libc
+# (no libuuid).
+build_libSM() {
+    comp "libSM [autotools cross]"
+    fresh_dirs libSM
+    fetch libSM
+    autotools_build "${XORG_NODOCS[@]}" --without-libuuid
+    stage libSM
+    so_check libSM.so.6
+    lib_needs libSM.so.6 libICE.so.6
+    pc_check sm "$VERSION"
+}
+
+# libXt — the X Toolkit Intrinsics. autotools; makestrs runs on the build host.
+build_libXt() {
+    comp "libXt [autotools cross]"
+    fresh_dirs libXt
+    fetch libXt
+    autotools_build "${XORG_NODOCS[@]}" --disable-unit-tests --without-glib --without-perl
+    stage libXt
+    so_check libXt.so.6
+    lib_needs libXt.so.6 libX11.so.6 libSM.so.6 libICE.so.6
+    pc_check xt "$VERSION"
+}
+
+# libXmu (and libXmuu, which xset and xauth link) — miscellaneous utilities.
+# autotools.
+build_libXmu() {
+    comp "libXmu [autotools cross]"
+    fresh_dirs libXmu
+    fetch libXmu
+    autotools_build "${XORG_NODOCS[@]}" --disable-unit-tests --without-glib
+    stage libXmu
+    so_check libXmu.so.6 libXmuu.so.1
+    lib_needs libXmu.so.6 libXt.so.6 libXext.so.6
+    pc_check xmu "$VERSION"
+    pc_check xmuu "$VERSION"
+}
+
+# libxkbfile — XKB file handling (server, xkbcomp, setxkbmap). meson.
+build_libxkbfile() {
+    comp "libxkbfile [meson cross]"
+    fresh_dirs libxkbfile
+    fetch libxkbfile
+    meson_build
+    stage libxkbfile
+    so_check libxkbfile.so.1
+    pc_check xkbfile "$VERSION"
+}
+
+# libXcursor — cursor loading (GNUstep's libs-back uses it for colour
+# cursors). autotools; the icon path defaults under /usr/X11/share/icons.
+build_libXcursor() {
+    comp "libXcursor [autotools cross]"
+    fresh_dirs libXcursor
+    fetch libXcursor
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libXcursor
+    so_check libXcursor.so.1
+    lib_needs libXcursor.so.1 libXrender.so.1 libXfixes.so.3
+    pc_check xcursor "$VERSION"
+}
+
+# libXcomposite — Composite extension. meson.
+build_libXcomposite() {
+    comp "libXcomposite [meson cross]"
+    fresh_dirs libXcomposite
+    fetch libXcomposite
+    meson_build -Ddocs=disabled
+    stage libXcomposite
+    so_check libXcomposite.so.1
+    pc_check xcomposite "$VERSION"
+}
+
+# xcb-util — atoms, aux, event helpers (libxcb-util). autotools.
+build_xcb_util() {
+    comp "xcb-util [autotools cross]"
+    fresh_dirs xcb-util
+    fetch xcb-util
+    autotools_build "${XORG_NODOCS[@]}"
+    stage xcb-util
+    so_check libxcb-util.so.1
+    pc_check xcb-util "$VERSION"
+}
+
+# xcb-util-wm — ICCCM and EWMH helpers. autotools (m4 on the build host).
+build_xcb_util_wm() {
+    comp "xcb-util-wm [autotools cross]"
+    fresh_dirs xcb-util-wm
+    fetch xcb-util-wm
+    autotools_build "${XORG_NODOCS[@]}"
+    stage xcb-util-wm
+    so_check libxcb-icccm.so.4 libxcb-ewmh.so.2
+    pc_check xcb-icccm "$VERSION"
+    pc_check xcb-ewmh "$VERSION"
+}
+
+# xcb-util-image — XImage-like helpers (for xcb-util-cursor). autotools.
+build_xcb_util_image() {
+    comp "xcb-util-image [autotools cross]"
+    fresh_dirs xcb-util-image
+    fetch xcb-util-image
+    autotools_build "${XORG_NODOCS[@]}"
+    stage xcb-util-image
+    so_check libxcb-image.so.0
+    lib_needs libxcb-image.so.0 libxcb-util.so.1 libxcb-shm.so.0
+    pc_check xcb-image "$VERSION"
+}
+
+# xcb-util-renderutil — RENDER helpers (for xcb-util-cursor). autotools.
+build_xcb_util_renderutil() {
+    comp "xcb-util-renderutil [autotools cross]"
+    fresh_dirs xcb-util-renderutil
+    fetch xcb-util-renderutil
+    autotools_build "${XORG_NODOCS[@]}"
+    stage xcb-util-renderutil
+    so_check libxcb-render-util.so.0
+    pc_check xcb-renderutil "$VERSION"
+}
+
+# xcb-util-cursor — cursor loading for XCB clients. autotools. The tarball
+# ships the gperf-generated shape table, so gperf is not run here.
+build_xcb_util_cursor() {
+    comp "xcb-util-cursor [autotools cross]"
+    fresh_dirs xcb-util-cursor
+    fetch xcb-util-cursor
+    autotools_build "${XORG_NODOCS[@]}"
+    stage xcb-util-cursor
+    so_check libxcb-cursor.so.0
+    lib_needs libxcb-cursor.so.0 libxcb-render-util.so.0 libxcb-image.so.0
+    pc_check xcb-cursor "$VERSION"
+}
+
+# pixman — pixel manipulation (the server and cairo). meson; moved here from
+# nextbsd-xlibre (E24 Q5) because it has no X dependency and cairo needs it.
+# SIMD paths are the upstream defaults for each arch; no tests, demos, GTK,
+# libpng or OpenMP.
+build_pixman() {
+    comp "pixman [meson cross]"
+    fresh_dirs pixman
+    fetch pixman
+    meson_build -Dtests=disabled -Ddemos=disabled -Dgtk=disabled \
+        -Dlibpng=disabled -Dopenmp=disabled -Dtimers=false -Dgnuplot=false
+    stage pixman
+    so_check libpixman-1.so.0
+    pc_check pixman-1 "$VERSION"
+}
+
+# expat — upstream XML parser for fontconfig (E24 audit 2, option (b)).
+# Base's libbsdxml is expat renamed for base use only, so it is not used.
+# autotools; no xmlwf, examples, tests or DocBook man page.
+build_expat() {
+    comp "expat [autotools cross]"
+    fresh_dirs expat
+    fetch expat
+    autotools_build --without-xmlwf --without-examples --without-tests --without-docbook
+    stage expat
+    so_check libexpat.so.1
+    pc_check expat "$VERSION"
+}
+
+# freetype — font rasteriser (libXft, libXfont2, fontconfig, cairo). meson.
+# zlib and bzip2 from the NextBSD base; no libpng (it would make xlibs depend
+# on nextbsd-gnustep-support; colour bitmap glyphs don't render), no harfbuzz
+# (harfbuzz needs freetype: a loop), no brotli (not in base, so no WOFF2).
+build_freetype() {
+    comp "freetype [meson cross]"
+    fresh_dirs freetype
+    fetch freetype
+    meson_build -Dzlib=system -Dbzip2=enabled -Dpng=disabled -Dharfbuzz=disabled \
+        -Dbrotli=disabled -Dtests=disabled
+    stage freetype
+    so_check libfreetype.so.6
+    lib_needs libfreetype.so.6 libz.so.6 libbz2.so.4
+    if "$CROSS_BINDIR/llvm-readelf" -d "$DESTDIR$X_PREFIX/lib/libfreetype.so.6" | grep -q -E 'NEEDED.*\[lib(png|harfbuzz|brotli)'; then
+        fail "libfreetype links libpng, harfbuzz or brotli"
+    fi
+    pc_check freetype2
+}
+
+# fontconfig — font configuration and matching. meson, with upstream expat and
+# gperf on the build host. Paths, all under /usr/X11 (README "fontconfig"):
+#   config   /usr/X11/etc/fonts (fonts.conf, conf.d -> share/fontconfig/conf.avail)
+#   cache    /usr/X11/var/cache/fontconfig (as Apple's X11 in /usr/X11 had it);
+#            per-user caches stay in ~/.cache/fontconfig
+#   fonts    /System/Library/Fonts, /Local/Library/Fonts,
+#            /Network/Library/Fonts, ~/Library/Fonts (NextBSD's domains, E23
+#            D4), then /usr/X11/share/fonts
+# fc-cache cannot run at install time on the build host (cache-build off); the
+# tools (fc-cache, fc-list, fc-match, ...) are built and shipped. No NLS,
+# iconv, docs or tests.
+build_fontconfig() {
+    host_gperf
+    comp "fontconfig [meson cross]"
+    fresh_dirs fontconfig
+    fetch fontconfig
+    PATH="$BUILD/host/bin:$PATH" meson_build \
+        -Dxml-backend=expat -Ddoc=disabled -Dnls=disabled -Dtests=disabled \
+        -Dtools=enabled -Dcache-build=disabled -Diconv=disabled -Dfontations=disabled \
+        -Ddefault-fonts-dirs=/System/Library/Fonts,/Local/Library/Fonts,/Network/Library/Fonts,~/Library/Fonts \
+        -Dadditional-fonts-dirs=$X_PREFIX/share/fonts
+    stage fontconfig
+    local x="$DESTDIR$X_PREFIX"
+    test -f "$x/etc/fonts/fonts.conf" || fail "$X_PREFIX/etc/fonts/fonts.conf not staged"
+    grep -q "<cachedir>$X_PREFIX/var/cache/fontconfig</cachedir>" "$x/etc/fonts/fonts.conf" \
+        || fail "fonts.conf does not name $X_PREFIX/var/cache/fontconfig"
+    grep -q "<dir>/System/Library/Fonts</dir>" "$x/etc/fonts/fonts.conf" \
+        || fail "fonts.conf does not name /System/Library/Fonts"
+    if grep -n /usr/local "$x/etc/fonts/fonts.conf"; then
+        fail "fonts.conf names /usr/local"
+    fi
+    test -x "$x/bin/fc-cache" || fail "fc-cache not staged"
+    so_check libfontconfig.so.1
+    lib_needs libfontconfig.so.1 libfreetype.so.6 libexpat.so.1
+    pc_check fontconfig "$VERSION"
+}
+
+# libXft — client-side fonts for X (freetype + fontconfig + RENDER). meson.
+build_libXft() {
+    comp "libXft [meson cross]"
+    fresh_dirs libXft
+    fetch libXft
+    meson_build
+    stage libXft
+    so_check libXft.so.2
+    lib_needs libXft.so.2 libfontconfig.so.1 libfreetype.so.6 libXrender.so.1
+    pc_check xft "$VERSION"
+}
+
+# libfontenc — font encoding tables (for libXfont2). meson; encodings are
+# looked up in /usr/X11/share/fonts/X11/encodings.
+build_libfontenc() {
+    comp "libfontenc [meson cross]"
+    fresh_dirs libfontenc
+    fetch libfontenc
+    meson_build
+    stage libfontenc
+    so_check libfontenc.so.1
+    pc_check fontenc "$VERSION"
+}
+
+# libXfont2 — the server's font library. autotools; freetype, no bzip2 font
+# files (upstream default).
+build_libXfont2() {
+    comp "libXfont2 [autotools cross]"
+    fresh_dirs libXfont2
+    fetch libXfont2
+    autotools_build "${XORG_NODOCS[@]}"
+    stage libXfont2
+    so_check libXfont2.so.2
+    lib_needs libXfont2.so.2 libfreetype.so.6 libfontenc.so.1
+    pc_check xfont2 "$VERSION"
+}
+
+# libxkbcommon (and libxkbcommon-x11) — keymap handling (xdotool). meson.
+# xkb data is looked up where nextbsd-xlibre installs xkeyboard-config,
+# /usr/X11/share/X11/xkb, and Compose files in libX11's locale tree. No tools,
+# Wayland, xkbregistry (it needs libxml2), docs or bash completion.
+build_libxkbcommon() {
+    comp "libxkbcommon [meson cross]"
+    fresh_dirs libxkbcommon
+    fetch libxkbcommon
+    meson_build -Denable-tools=false -Denable-wayland=false -Denable-xkbregistry=false \
+        -Denable-docs=false -Denable-bash-completion=false -Denable-x11=true \
+        -Dxkb-config-root=$X_PREFIX/share/X11/xkb -Dx-locale-root=$X_PREFIX/share/X11/locale
+    stage libxkbcommon
+    so_check libxkbcommon.so.0 libxkbcommon-x11.so.0
+    lib_needs libxkbcommon-x11.so.0 libxcb-xkb.so.1
+    pc_check xkbcommon "$VERSION"
+    pc_check xkbcommon-x11 "$VERSION"
+}
+
+# =============================================================================
 # driver
 # =============================================================================
 # Add a component: pin it in sources.lock, write build_<name>() above (hyphens
 # in the name become underscores in the function), put its patches, if any, in
-# patches/<name>/ with a series file, and append <name> here in build order.
-COMPONENTS="xorgproto xtrans libdrm"
+# patches/<name>/ with a series file, and add <name> here, one per line, in
+# build order.
+COMPONENTS="
+    xorgproto
+    xtrans
+    libdrm
+    xcb-proto
+    libXau
+    libXdmcp
+    libxcb
+    libX11
+    libXext
+    libXfixes
+    libXrender
+    libXrandr
+    libXi
+    libXtst
+    libXinerama
+    libXxf86vm
+    libxshmfence
+    libICE
+    libSM
+    libXt
+    libXmu
+    libxkbfile
+    libXcursor
+    libXcomposite
+    xcb-util
+    xcb-util-wm
+    xcb-util-image
+    xcb-util-renderutil
+    xcb-util-cursor
+    pixman
+    expat
+    freetype
+    fontconfig
+    libXft
+    libfontenc
+    libXfont2
+    libxkbcommon
+"
 
 if [ $# -gt 0 ]; then
     for c in "$@"; do
-        case " $COMPONENTS " in
+        case " $(echo $COMPONENTS) " in
             *" $c "*) ;;
-            *) fail "unknown component '$c' (known: $COMPONENTS)" ;;
+            *) fail "unknown component '$c' (known: $(echo $COMPONENTS))" ;;
         esac
     done
     COMPONENTS="$*"
 fi
 
-echo "nextbsd-xlibs: building [$COMPONENTS] for $T/$TA into $DESTDIR$X_PREFIX"
+echo "nextbsd-xlibs: building [$(echo $COMPONENTS)] for $T/$TA into $DESTDIR$X_PREFIX"
 mkdir -p "$DESTDIR"
+base_list
 for c in $COMPONENTS; do
     "build_$(printf '%s' "$c" | tr - _)"
 done
