@@ -112,6 +112,17 @@ so_check() {
     done
 }
 
+# pc_unsysroot <file.pc>: an upstream .pc.in that copies a dependency's
+# pkgconf --cflags into its own Cflags gets the sysroot spelled out
+# (-I$SYSROOT/usr/X11/include). Drop the sysroot prefix so the flag names the
+# target path; stage still refuses any build path left over.
+pc_unsysroot() {
+    local f="$COMP_ROOT$X_PREFIX/lib/pkgconfig/$1"
+    [ -f "$f" ] || fail "pc_unsysroot: $1 not installed"
+    sed -i "s#-I$SYSROOT/#-I/#g; s#-L$SYSROOT/#-L/#g" "$f"
+    note "$1: sysroot prefix dropped from its flags"
+}
+
 # lib_needs <soname> <needed>...: a staged library links each <needed>.
 lib_needs() {
     local lib="$DESTDIR$X_PREFIX/lib/$1" n
@@ -588,12 +599,14 @@ build_libXxf86vm() {
 # libxshmfence — shared-memory fences for DRI3 (server and Mesa). autotools.
 # No linux/futex.h in the sysroot, so it uses pthread primitives; memfd_create
 # is in NextBSD's libc. The fallback directory is named because configure
-# would otherwise probe the build host's /run/shm and /dev/shm.
+# would otherwise probe the build host's /run/shm and /dev/shm. Its .pc copies
+# xproto's cflags, sysroot and all (pc_unsysroot).
 build_libxshmfence() {
     comp "libxshmfence [autotools cross]"
     fresh_dirs libxshmfence
     fetch libxshmfence
     autotools_build --with-shared-memory-dir=/tmp
+    pc_unsysroot xshmfence.pc
     stage libxshmfence
     so_check libxshmfence.so.1
     pc_check xshmfence "$VERSION"
