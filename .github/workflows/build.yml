@@ -1,0 +1,109 @@
+name: Build NextBSD xlibs (libdrm and the X client libraries)
+
+# Cross-builds libdrm and the X client libraries into /usr/X11 for amd64 and
+# arm64 on the x86_64 runner, inside the per-arch nextbsd-kernel-toolchain
+# container, against compat's `continuous` base as the sysroot, from the pinned
+# tarballs in sources.lock. Publishes nextbsd-xlibs-<arch>.tar.gz to this repo's
+# `continuous` release on pushes to main and on manual runs from main; pull
+# requests build only.
+#
+# Nothing is dispatched from here and nothing dispatches here: nextbsd-mesa and
+# nextbsd-xlibre (which build against this artifact) and nextbsd-pkg are run by
+# hand, in order (E23 plan; the rebuild-chain policy: a merge never rebuilds
+# downstream repos).
+
+on:
+  push:
+    branches: [main]
+    paths: ['build-xlibs.sh', 'sources.lock', 'patches/**', 'cross/**', '.github/workflows/build.yml']
+  pull_request:
+    paths: ['build-xlibs.sh', 'sources.lock', 'patches/**', 'cross/**', '.github/workflows/build.yml']
+  workflow_dispatch:
+    inputs:
+      fbsd_sha:
+        description: 'Pinned FreeBSD SHA for the toolchain image tag (blank = latest)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: xlibs (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, target_arch: amd64 }
+          - { arch: arm64, target_arch: aarch64 }
+    container:
+      # Per-arch toolchain image: the pinned llvmorg-19.1.7 clang, lld and LLVM
+      # binutils at $CROSS_BINDIR (set by the image), plus meson 1.12.1, ninja,
+      # cmake, pkgconf, autotools and X.Org util-macros (nextbsd-toolchain#13).
+      # Nothing is apt-installed here.
+      image: ghcr.io/nextbsd/nextbsd-kernel-toolchain:${{ matrix.arch }}-${{ inputs.fbsd_sha && format('fbsd-{0}', inputs.fbsd_sha) || 'latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Stage the cross sysroot from compat's `continuous` base: libc, libthr,
+      # libz and friends, plus headers and /usr/libdata/pkgconfig. A public
+      # read, so the built-in token is enough and fork PRs work. build-xlibs.sh
+      # installs each component into this sysroot's /usr/X11 as it goes.
+      - name: Stage sysroot from compat continuous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/sysroot"
+          gh release download continuous \
+            --repo nextbsd/nextbsd-freebsd-compat \
+            --pattern "nextbsd-base-${{ matrix.arch }}.tar.gz" \
+            --output /tmp/base.tar.gz --clobber
+          tar -C "$GITHUB_WORKSPACE/sysroot" -xzf /tmp/base.tar.gz
+
+      - name: Build xlibs into /stage
+        env:
+          T: ${{ matrix.arch }}
+          TA: ${{ matrix.target_arch }}
+          SYSROOT: ${{ github.workspace }}/sysroot
+          DESTDIR: /stage
+        run: ./build-xlibs.sh
+
+      # Raw tar of /stage rooted at /: everything under /usr/X11, including the
+      # headers, .pc files and .so links that nextbsd-mesa and nextbsd-xlibre
+      # stage into their sysroots. Splitting runtime from development files is
+      # nextbsd-pkg's job (E23 D13).
+      - name: Pack xlibs artifact
+        run: |
+          tar -C /stage -czf "/tmp/nextbsd-xlibs-${{ matrix.arch }}.tar.gz" .
+          tar -tzvf "/tmp/nextbsd-xlibs-${{ matrix.arch }}.tar.gz" | grep -v '/$' || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextbsd-xlibs-${{ matrix.arch }}
+          path: /tmp/nextbsd-xlibs-${{ matrix.arch }}.tar.gz
+
+  publish:
+    needs: build
+    # Pushes to main and manual runs from main; never pull requests.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Gather artifacts
+        run: |
+          mkdir -p out
+          find artifacts -name 'nextbsd-xlibs-*.tar.gz' -exec cp {} out/ \;
+          ls -la out/
+      - name: Publish to continuous release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous
+          name: Continuous xlibs build
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: out/*.tar.gz
+      # That is where this stops: no dispatch to nextbsd-mesa, nextbsd-xlibre
+      # or nextbsd-pkg. They are run by hand once this build is known good.
