@@ -23,9 +23,13 @@ NM="$CROSS_BINDIR/llvm-nm"
 STRIP="$CROSS_BINDIR/llvm-strip"
 OBJCOPY="$CROSS_BINDIR/llvm-objcopy"
 
-# Programs that run on the build host during the build (libX11's makekeys and
-# the like) use the host compiler.
+# Programs that run on the build host during the build (libX11's makekeys,
+# libXt's makestrs) use the host compiler. They include the X protocol headers
+# (X11/X.h, X11/keysymdef.h), which are architecture-independent, so they are
+# taken from the sysroot's /usr/X11/include: only X headers live there, never
+# the target's libc headers.
 CC_FOR_BUILD=cc
+CPPFLAGS_FOR_BUILD="-I$SYSROOT/usr/X11/include"
 
 # pkgconf (ISC), never freedesktop's GPL pkg-config. Only the sysroot's .pc
 # directories are searched, and -I/-L results are prefixed with the sysroot.

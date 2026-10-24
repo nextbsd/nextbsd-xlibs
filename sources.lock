@@ -14,3 +14,51 @@ xorgproto  2026.1  f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8
 xtrans     1.6.0   faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92  https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.6.0.tar.xz
 # libdrm: SHA-256 also matches FreeBSD ports' graphics/libdrm/distinfo.
 libdrm     2.4.134 ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95  https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz
+
+# ---- X client libraries (nextbsd-xlibs#3), in build order ----
+# xcb-proto is build input only: its XML and xcbgen go into the sysroot for
+# libxcb and are not part of the artifact.
+xcb-proto           1.17.0  2c1bacd2110f4799f74de6ebb714b94cf6f80fb112316b1219480fd22562148c  https://xorg.freedesktop.org/archive/individual/proto/xcb-proto-1.17.0.tar.xz
+libXau              1.0.12  74d0e4dfa3d39ad8939e99bda37f5967aba528211076828464d2777d477fc0fb  https://xorg.freedesktop.org/archive/individual/lib/libXau-1.0.12.tar.xz
+libXdmcp            1.1.5   d8a5222828c3adab70adf69a5583f1d32eb5ece04304f7f8392b6a353aa2228c  https://xorg.freedesktop.org/archive/individual/lib/libXdmcp-1.1.5.tar.xz
+libxcb              1.17.0  599ebf9996710fea71622e6e184f3a8ad5b43d0e5fa8c4e407123c88a59a6d55  https://xorg.freedesktop.org/archive/individual/lib/libxcb-1.17.0.tar.xz
+libX11              1.8.14  bbc78c46217174655c2b32b138ad119f3ac15f50808b4d0b3a2677a4b1afc950  https://xorg.freedesktop.org/archive/individual/lib/libX11-1.8.14.tar.xz
+libXext             1.3.7   6c643c7035cdacf67afd68f25d01b90ef889d546c9fcd7c0adf7c2cf91e3a32d  https://xorg.freedesktop.org/archive/individual/lib/libXext-1.3.7.tar.xz
+libXfixes           6.0.2   39f115d72d9c5f8111e4684164d3d68cc1fd21f9b27ff2401b08fddfc0f409ba  https://xorg.freedesktop.org/archive/individual/lib/libXfixes-6.0.2.tar.xz
+libXrender          0.9.13  3fe88c609df6782e1e7af2e4de36b2563d70cd70ff7dcb1cda561ad64912bb64  https://xorg.freedesktop.org/archive/individual/lib/libXrender-0.9.13.tar.xz
+libXrandr           1.5.5   72b922c2e765434e9e9f0960148070bd4504b288263e2868a4ccce1b7cf2767a  https://xorg.freedesktop.org/archive/individual/lib/libXrandr-1.5.5.tar.xz
+libXi               1.8.4   ddd6057b89a91903bc2f884d55c8467440906945e482c36547260dff28661afc  https://xorg.freedesktop.org/archive/individual/lib/libXi-1.8.4.tar.xz
+libXtst             1.2.6   f94f0b37c07d80d877f3eda2c2405cc7e62aa9842f6310354aa349e3d66a4fe5  https://xorg.freedesktop.org/archive/individual/lib/libXtst-1.2.6.tar.xz
+libXinerama         1.1.6   d00fc1599c303dc5cbc122b8068bdc7405d6fcb19060f4597fc51bd3a8be51d7  https://xorg.freedesktop.org/archive/individual/lib/libXinerama-1.1.6.tar.xz
+libXxf86vm          1.1.7   ae50c0f669e0af5a67cc4cd0f54f21d64a64d2660af883e80e95d3fe51b945d8  https://xorg.freedesktop.org/archive/individual/lib/libXxf86vm-1.1.7.tar.xz
+libxshmfence        1.3.3   d4a4df096aba96fea02c029ee3a44e11a47eb7f7213c1a729be83e85ec3fde10  https://xorg.freedesktop.org/archive/individual/lib/libxshmfence-1.3.3.tar.xz
+libICE              1.1.2   974e4ed414225eb3c716985df9709f4da8d22a67a2890066bc6dfc89ad298625  https://xorg.freedesktop.org/archive/individual/lib/libICE-1.1.2.tar.xz
+libSM               1.2.6   be7c0abdb15cbfd29ac62573c1c82e877f9d4047ad15321e7ea97d1e43d835be  https://xorg.freedesktop.org/archive/individual/lib/libSM-1.2.6.tar.xz
+libXt               1.3.1   e0a774b33324f4d4c05b199ea45050f87206586d81655f8bef4dba434d931288  https://xorg.freedesktop.org/archive/individual/lib/libXt-1.3.1.tar.xz
+libXmu              1.3.1   81a99e94c4501e81c427cbaa4a11748b584933e94b7a156830c3621256857bc4  https://xorg.freedesktop.org/archive/individual/lib/libXmu-1.3.1.tar.xz
+libxkbfile          1.2.0   7f71884e5faf56fb0e823f3848599cf9b5a9afce51c90982baeb64f635233ebf  https://xorg.freedesktop.org/archive/individual/lib/libxkbfile-1.2.0.tar.xz
+libXcursor          1.2.3   fde9402dd4cfe79da71e2d96bb980afc5e6ff4f8a7d74c159e1966afb2b2c2c0  https://xorg.freedesktop.org/archive/individual/lib/libXcursor-1.2.3.tar.xz
+libXcomposite       0.4.7   8bdf310967f484503fa51714cf97bff0723d9b673e0eecbf92b3f97c060c8ccb  https://xorg.freedesktop.org/archive/individual/lib/libXcomposite-0.4.7.tar.xz
+
+# ---- xcb-util libraries (GNUstep, E24) ----
+xcb-util            0.4.1   5abe3bbbd8e54f0fa3ec945291b7e8fa8cfd3cccc43718f8758430f94126e512  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-0.4.1.tar.xz
+xcb-util-wm         0.4.2   62c34e21d06264687faea7edbf63632c9f04d55e72114aa4a57bb95e4f888a0b  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-wm-0.4.2.tar.xz
+xcb-util-image      0.4.1   ccad8ee5dadb1271fd4727ad14d9bd77a64e505608766c4e98267d9aede40d3d  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-image-0.4.1.tar.xz
+xcb-util-renderutil 0.3.10  3e15d4f0e22d8ddbfbb9f5d77db43eacd7a304029bf25a6166cc63caa96d04ba  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-renderutil-0.3.10.tar.xz
+xcb-util-cursor     0.1.6   fdeb8bd127873519be5cc70dcd0d3b5d33b667877200f9925a59fdcad8f7a933  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-cursor-0.1.6.tar.xz
+
+# ---- pixman, expat and the font stack (E24 Q5; freetype without libpng) ----
+# libxkbcommon is a GitHub tag archive: upstream publishes no release tarball.
+pixman              0.46.4  a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239  https://xorg.freedesktop.org/archive/individual/lib/pixman-0.46.4.tar.xz
+expat               2.9.0   1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051  https://github.com/libexpat/libexpat/releases/download/R_2_9_0/expat-2.9.0.tar.xz
+freetype            2.15.0  93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5  https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.xz
+fontconfig          2.18.3  4f7b554a38cdf78c033f666c8871f3749e14a094f65a07f630c91ed0b43d35e3  https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/2.18.3/fontconfig-2.18.3.tar.xz
+libXft              2.3.9   60a25b78945ed6932635b3bb1899a517d31df7456e69867ffba27f89ff3976f5  https://xorg.freedesktop.org/archive/individual/lib/libXft-2.3.9.tar.xz
+libfontenc          1.1.9   9d8392705cb10803d5fe1d27d236cbab3f664e26841ce01916bbbe430cf273e2  https://xorg.freedesktop.org/archive/individual/lib/libfontenc-1.1.9.tar.xz
+libXfont2           2.0.9   f042a370666815e7b941e9b7019024755bd1c6c2954afbfa515af378251799e2  https://xorg.freedesktop.org/archive/individual/lib/libXfont2-2.0.9.tar.xz
+libxkbcommon        1.13.2  acc4d5f7c3cbba5f9f8d08d8bdbeede84ecede46792f47929aa9321873385528  https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.13.2.tar.gz
+
+# ---- host build tools (built on the runner, used at build time, never shipped) ----
+# gperf: fontconfig generates its object hash with it. Not in the toolchain
+# image yet; built here from source until it is (README.md, "Host build tools").
+gperf               3.3     fd87e0aba7e43ae054837afd6cd4db03a3f2693deb3619085e6ed9d8d9604ad8  https://mirrors.kernel.org/gnu/gperf/gperf-3.3.tar.gz
