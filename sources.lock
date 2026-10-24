@@ -1,0 +1,14 @@
+# sources.lock: every upstream source nextbsd-xlibs builds, pinned.
+#
+# One line per component:  <name> <version> <sha256> <url>
+# <name> matches build_<name> in build-xlibs.sh (hyphens as underscores) and
+# patches/<name>/. build-xlibs.sh downloads <url>, refuses it unless its
+# SHA-256 is <sha256>, and unpacks it. Only upstream release tarballs (or tag
+# archives) are listed: no FreeBSD packages or ports distfiles, no xsrc or
+# xenocara. Bumping a version is a deliberate change to this file.
+#
+# xorg util-macros 1.20.2 is not listed: the toolchain image pins and installs
+# it (nextbsd-toolchain#13), and it is a build tool only.
+
+xorgproto  2026.1  f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8290  https://xorg.freedesktop.org/archive/individual/proto/xorgproto-2026.1.tar.xz
+xtrans     1.6.0   faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92  https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.6.0.tar.xz
