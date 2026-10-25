@@ -1,16 +1,18 @@
-name: Build NextBSD xlibs (libdrm and the X client libraries)
+name: Build NextBSD xlibs (the X client libraries)
 
-# Cross-builds libdrm and the X client libraries into /usr/X11 for amd64 and
-# arm64 on the x86_64 runner, inside the per-arch nextbsd-kernel-toolchain
-# container, against compat's `continuous` base as the sysroot, from the pinned
-# tarballs in sources.lock. Publishes nextbsd-xlibs-<arch>.tar.gz to this repo's
-# `continuous` release on pushes to main and on manual runs from main; pull
-# requests build only.
+# Cross-builds the X client libraries into /usr/X11 for amd64 and arm64 on the
+# x86_64 runner, inside the per-arch nextbsd-kernel-toolchain container, from
+# the pinned tarballs in sources.lock. The sysroot is compat's `continuous`
+# base, then nextbsd-displayserver-support's `continuous` artifact (libdrm,
+# pixman, expat, freetype, fontconfig, the libxkbcommon core and the rest, in
+# /usr), which the X libraries here link. Publishes
+# nextbsd-xlibs-<arch>.tar.gz to this repo's `continuous` release on pushes to
+# main and on manual runs from main; pull requests build only.
 #
-# Nothing is dispatched from here and nothing dispatches here: nextbsd-mesa and
-# nextbsd-xlibre (which build against this artifact) and nextbsd-pkg are run by
-# hand, in order (E23 plan; the rebuild-chain policy: a merge never rebuilds
-# downstream repos).
+# Nothing is dispatched from here and nothing dispatches here: nextbsd-mesa,
+# nextbsd-xlibre, nextbsd-gnustep-support and nextbsd-gershwin-support (which
+# build against this artifact) and nextbsd-pkg are run by hand, in order (E23
+# plan; the rebuild-chain policy: a merge never rebuilds downstream repos).
 
 on:
   push:
@@ -44,11 +46,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Stage the cross sysroot from compat's `continuous` base: libc, libthr,
-      # libz and friends, plus headers and /usr/libdata/pkgconfig. A public
-      # read, so the built-in token is enough and fork PRs work. build-xlibs.sh
-      # installs each component into this sysroot's /usr/X11 as it goes.
-      - name: Stage sysroot from compat continuous
+      # Stage the cross sysroot, in this order:
+      #   1. compat's base: libc, libthr, libz and friends, plus headers and
+      #      /usr/libdata/pkgconfig;
+      #   2. nextbsd-displayserver-support: libdrm, pixman, expat, freetype,
+      #      fontconfig, libxkbcommon (core), xkeyboard-config and the input
+      #      stack in /usr (.pc files in /usr/libdata/pkgconfig). libXft and
+      #      libXfont2 link its freetype and fontconfig, libxkbcommon-x11 its
+      #      libxkbcommon.
+      # Public reads, so the built-in token is enough and fork PRs work.
+      # build-xlibs.sh lists both as files it may not overwrite, then installs
+      # each component into this sysroot's /usr/X11 as it goes.
+      - name: Stage sysroot from compat and displayserver-support continuous
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -57,7 +66,13 @@ jobs:
             --repo nextbsd/nextbsd-freebsd-compat \
             --pattern "nextbsd-base-${{ matrix.arch }}.tar.gz" \
             --output /tmp/base.tar.gz --clobber
-          tar -C "$GITHUB_WORKSPACE/sysroot" -xzf /tmp/base.tar.gz
+          gh release download continuous \
+            --repo nextbsd/nextbsd-displayserver-support \
+            --pattern "nextbsd-displayserver-support-${{ matrix.arch }}.tar.gz" \
+            --output /tmp/displayserver-support.tar.gz --clobber
+          for t in base displayserver-support; do
+            tar -C "$GITHUB_WORKSPACE/sysroot" -xzf "/tmp/$t.tar.gz"
+          done
 
       - name: Build xlibs into /stage
         env:
@@ -68,9 +83,10 @@ jobs:
         run: ./build-xlibs.sh
 
       # Raw tar of /stage rooted at /: everything under /usr/X11, including the
-      # headers, .pc files and .so links that nextbsd-mesa and nextbsd-xlibre
-      # stage into their sysroots. Splitting runtime from development files is
-      # nextbsd-pkg's job (E23 D13).
+      # headers, .pc files and .so links that nextbsd-mesa, nextbsd-xlibre,
+      # nextbsd-gnustep-support and nextbsd-gershwin-support stage into their
+      # sysroots (after nextbsd-displayserver-support). Splitting runtime from
+      # development files is nextbsd-pkg's job (E23 D13).
       - name: Pack xlibs artifact
         run: |
           tar -C /stage -czf "/tmp/nextbsd-xlibs-${{ matrix.arch }}.tar.gz" .

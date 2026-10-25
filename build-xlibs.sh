@@ -3,9 +3,12 @@
 # build-xlibs.sh — cross-build driver for nextbsd-xlibs
 # =============================================================================
 #
-# Builds libdrm and the X client libraries NextBSD ships in base (E23, plan step
-# 4 onwards) for ONE architecture, from pinned upstream release tarballs, into
-# the /usr/X11 prefix with upstream sonames.
+# Builds the X client libraries NextBSD ships in base (E23, plan step 4
+# onwards) for ONE architecture, from pinned upstream release tarballs, into
+# the /usr/X11 prefix with upstream sonames. libdrm, pixman, expat, freetype,
+# fontconfig and the libxkbcommon core are not built here: they come from
+# nextbsd-displayserver-support, in /usr (E25 D3/D4), and the libraries here
+# that use them link those copies.
 #
 # For each component, in COMPONENTS order:
 #   1. fetch:   download the tarball named in sources.lock, refuse it unless
@@ -22,13 +25,16 @@
 # Upstream build systems are used as they are, with NextBSD's options; nothing
 # is rewritten as a hand-made makefile. Nothing here uses FreeBSD packages, the
 # ports tree or ports tools, and nothing links against nextbsd-userland: the
-# NextBSD base (compat) sysroot is the only input besides sources.lock.
+# NextBSD base (compat) sysroot with nextbsd-displayserver-support staged on
+# top is the only input besides sources.lock.
 #
 # EXECUTION CONTEXT (set up by CI before this runs)
 #   Inside the nextbsd-kernel-toolchain container (pinned clang/lld 19.1.7 in
 #   $CROSS_BINDIR, meson, ninja, cmake, pkgconf, autotools, util-macros), with
-#   compat's `continuous` base extracted into $SYSROOT. $SYSROOT is scratch:
-#   this script installs every component into its /usr/X11 as it goes.
+#   compat's `continuous` base, then nextbsd-displayserver-support's
+#   `continuous` artifact (/usr), extracted into $SYSROOT. $SYSROOT is
+#   scratch: this script installs every component into its /usr/X11 as it
+#   goes.
 #
 # USAGE
 #   ./build-xlibs.sh               every component, in COMPONENTS order
@@ -225,23 +231,78 @@ autotools_build() {
     )
 }
 
-# The base's own files, listed while the sysroot is still the pristine compat
-# base (before this script has installed anything into its /usr/X11), so stage
-# can refuse a component that would overwrite one. A later partial run reuses
-# the list.
+# What nextbsd-displayserver-support provides in /usr (E25) and this repo
+# used to build into /usr/X11 (libdrm, pixman, expat, freetype, fontconfig,
+# the libxkbcommon core), as paths under a prefix. None of them may exist
+# under $X_PREFIX, in the sysroot or in the artifact: a stale copy there
+# would be found before /usr's (X headers and -L$X_PREFIX/lib come first on
+# the command lines), and two copies of freetype or fontconfig in one process
+# is the failure E25 audit 3 warns of.
+MOVED_PATHS="
+    include/xf86drm.h include/xf86drmMode.h include/libsync.h include/libdrm
+    lib/libdrm.so* lib/libdrm_*.so* share/libdrm
+    include/pixman-1 lib/libpixman-1.so*
+    include/expat.h include/expat_external.h include/expat_config.h
+    lib/libexpat.so* lib/cmake/expat-*
+    include/freetype2 lib/libfreetype.so* share/aclocal/freetype2.m4
+    include/fontconfig lib/libfontconfig.so* bin/fc-* etc/fonts
+    var/cache/fontconfig share/fontconfig share/xml/fontconfig
+    share/gettext/its/fontconfig.*
+    lib/libxkbcommon.so* include/xkbcommon/xkbcommon.h
+    include/xkbcommon/xkbcommon-compat.h include/xkbcommon/xkbcommon-compose.h
+    include/xkbcommon/xkbcommon-keysyms.h include/xkbcommon/xkbcommon-names.h
+    lib/pkgconfig/libdrm.pc lib/pkgconfig/libdrm_*.pc lib/pkgconfig/pixman-1.pc
+    lib/pkgconfig/expat.pc lib/pkgconfig/freetype2.pc lib/pkgconfig/fontconfig.pc
+    lib/pkgconfig/xkbcommon.pc
+"
+
+# no_moved_copies <root> <what>: fail if <root>$X_PREFIX holds any MOVED_PATHS.
+no_moved_copies() {
+    local root="$1" what="$2" pat f found="" pats
+    set -f; pats=($MOVED_PATHS); set +f
+    for pat in "${pats[@]}"; do
+        for f in "$root$X_PREFIX"/$pat; do
+            if [ -e "$f" ] || [ -L "$f" ]; then found="$found ${f#"$root"}"; fi
+        done
+    done
+    [ -z "$found" ] || fail "$what has $X_PREFIX copies of nextbsd-displayserver-support files:$found"
+    note "$what: no $X_PREFIX copies of nextbsd-displayserver-support files"
+}
+
+# The sysroot must have nextbsd-displayserver-support staged in /usr (CI
+# extracts it after compat's base): the .pc files this repo's libraries
+# resolve, and no older /usr/X11 copy that could be picked instead.
+displayserver_support_check() {
+    local pc
+    for pc in freetype2 fontconfig expat xkbcommon; do
+        [ -f "$SYSROOT/usr/libdata/pkgconfig/$pc.pc" ] \
+            || fail "nextbsd-displayserver-support is not staged in $SYSROOT/usr (no /usr/libdata/pkgconfig/$pc.pc)"
+    done
+    no_moved_copies "$SYSROOT" "sysroot"
+}
+
+# The files already in the sysroot (the NextBSD base and
+# nextbsd-displayserver-support), listed before this script has installed
+# anything into its /usr/X11, so stage can refuse a component that would
+# overwrite one. The marker is a file of this repo's own, xorgproto's
+# xproto.pc (the first component), not /usr/X11 itself: whether /usr/X11
+# exists before this runs depends on what the other staged artifacts carry.
+# A later partial run reuses the list.
 base_list() {
     BASE_LIST="$BUILD/base-files-$T.list"
     mkdir -p "$BUILD"
-    if [ ! -e "$SYSROOT$X_PREFIX" ]; then
+    if [ ! -e "$SYSROOT$X_PREFIX/lib/pkgconfig/xproto.pc" ]; then
         (cd "$SYSROOT" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort) > "$BASE_LIST"
+        note "$(wc -l < "$BASE_LIST") base and nextbsd-displayserver-support files protected from overwrite"
     elif [ ! -f "$BASE_LIST" ]; then
-        fail "$SYSROOT$X_PREFIX already exists but $BASE_LIST is missing; start from a fresh compat base"
+        fail "$SYSROOT$X_PREFIX/lib/pkgconfig/xproto.pc already exists but $BASE_LIST is missing; start from a fresh compat base and nextbsd-displayserver-support"
     fi
 }
 
 # stage <name> [sysroot-only]: tidy and check $COMP_ROOT, then copy it into
 # $SYSROOT (for the components after this one) and $DESTDIR (the artifact).
-#   - everything must be under /usr/X11, and nothing may replace a base file;
+#   - everything must be under /usr/X11, and nothing may replace a file of
+#     the base or nextbsd-displayserver-support;
 #   - libtool .la files and docs are dropped (man pages are kept);
 #   - .pc files from share/pkgconfig and libdata/pkgconfig move to
 #     lib/pkgconfig;
@@ -272,7 +333,7 @@ stage() {
     done
     find "$x" -type d -empty -delete
     clash=$(cd "$COMP_ROOT" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort | LC_ALL=C comm -12 - "$BASE_LIST")
-    [ -z "$clash" ] || fail "$name would replace files of the NextBSD base: $clash"
+    [ -z "$clash" ] || fail "$name would replace files of the NextBSD base or nextbsd-displayserver-support: $clash"
     (cd "$COMP_ROOT" && tar -cf - .) | (cd "$SYSROOT" && tar -xf -)
     if [ "$where" = sysroot-only ]; then
         note "staged $(cd "$COMP_ROOT" && find . ! -type d | wc -l) files (sysroot only, not in the artifact)"
@@ -286,10 +347,54 @@ stage() {
 # later components will see it (and, if given, at that version).
 pc_check() {
     local mod="$1" want="${2:-}" got
-    got=$(PKG_CONFIG_LIBDIR="$SYSROOT$X_PREFIX/lib/pkgconfig:$SYSROOT/usr/libdata/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$SYSROOT" \
-          pkgconf --modversion "$mod") || fail "pkgconf cannot resolve $mod"
+    got=$(sysroot_pkgconf --modversion "$mod") || fail "pkgconf cannot resolve $mod"
     [ -z "$want" ] || [ "$got" = "$want" ] || fail "$mod.pc is version $got, expected $want"
     note "pkgconf ok: $mod $got"
+}
+
+# sysroot_pkgconf <args>: pkgconf as the cross builds see it (the same search
+# order as cross/meson/<arch>.ini and cross/autotools/common.site: the base and
+# nextbsd-displayserver-support in /usr/libdata/pkgconfig, then /usr/X11).
+sysroot_pkgconf() {
+    PKG_CONFIG_LIBDIR="$SYSROOT/usr/libdata/pkgconfig:$SYSROOT$X_PREFIX/lib/pkgconfig" PKG_CONFIG_SYSROOT_DIR="$SYSROOT" \
+        pkgconf "$@"
+}
+
+# pc_from_usr <module>...: each module resolves to the .pc file in
+# /usr/libdata/pkgconfig (nextbsd-displayserver-support's), not to a copy in
+# /usr/X11.
+pc_from_usr() {
+    local m got
+    for m in "$@"; do
+        got=$(sysroot_pkgconf --path "$m") || fail "pkgconf cannot resolve $m"
+        [ "$got" = "$SYSROOT/usr/libdata/pkgconfig/$m.pc" ] \
+            || fail "$m resolves to $got, not nextbsd-displayserver-support's /usr/libdata/pkgconfig/$m.pc"
+        note "pkgconf: $m from /usr/libdata/pkgconfig ($(sysroot_pkgconf --modversion "$m"))"
+    done
+}
+
+# needs_from_usr <soname> <needed>...: the staged $X_PREFIX/lib/<soname> links
+# each <needed> by bare soname, carries no RPATH/RUNPATH, and the sysroot has
+# <needed> in /usr/lib (nextbsd-displayserver-support) and not in
+# $X_PREFIX/lib, so the runtime linker finds the /usr copy.
+needs_from_usr() {
+    local lib="$DESTDIR$X_PREFIX/lib/$1" dyn n
+    shift
+    dyn=$("$CROSS_BINDIR/llvm-readelf" -d "$lib") || fail "cannot read $lib"
+    if printf '%s\n' "$dyn" | grep -E '\((RPATH|RUNPATH)\)'; then
+        fail "$(basename "$lib") has an RPATH/RUNPATH"
+    fi
+    if printf '%s\n' "$dyn" | grep 'NEEDED' | grep -F /; then
+        fail "$(basename "$lib") names a NEEDED library by path"
+    fi
+    for n in "$@"; do
+        needed_check "$lib" "$n"
+        [ -e "$SYSROOT/usr/lib/$n" ] || fail "$n is not in the sysroot's /usr/lib (nextbsd-displayserver-support not staged?)"
+        if [ -e "$SYSROOT$X_PREFIX/lib/$n" ] || [ -L "$SYSROOT$X_PREFIX/lib/$n" ]; then
+            fail "the sysroot has a $X_PREFIX/lib/$n copy; $(basename "$lib") must link /usr/lib/$n"
+        fi
+        note "$(basename "$lib"): $n resolves from /usr/lib"
+    done
 }
 
 # =============================================================================
@@ -327,99 +432,11 @@ build_xtrans() {
     pc_check xtrans "$VERSION"
 }
 
-# libdrm — the DRM userspace library (libdrm.so.2) and the kernel uapi headers
-# under include/libdrm, for Mesa (GBM, EGL, the gallium drivers) and the
-# server's modesetting driver. meson.
-#
-# patches/libdrm: the nextbsd-ports patches (platform-bus devices, so vc4 and
-# v3d are enumerated; ETIME in libsync.h) and the render-node fix (a render
-# node belongs to the device that owns it, not to hw.dri.<minor - 128>).
-#
-# Components follow Mesa's drivers (E23 D6), per arch:
-#   amd64  amdgpu (radeonsi) and radeon (r600, the ati DDX).
-#   arm64  vc4 (headers and .pc only). v3d has no libdrm component; its uapi
-#          header comes from Mesa's include/drm-uapi.
-# Off everywhere: intel (libdrm_intel needs libpciaccess, and only gallium
-# i915 and the intel DDX use it; iris and crocus need just i915_drm.h, which
-# core libdrm installs), vmwgfx (no kernel driver), omap, exynos, freedreno,
-# tegra, etnaviv and nouveau (no kernel drivers), the test programs, cairo,
-# valgrind, udev and the man pages (rst2man is not in the toolchain image).
-build_libdrm() {
-    comp "libdrm [meson cross]"
-    fresh_dirs libdrm
-    fetch libdrm
-    local amd=disabled vc4=disabled
-    case "$T" in
-        amd64) amd=enabled ;;
-        arm64) vc4=enabled ;;
-    esac
-    meson_build \
-        -Damdgpu="$amd" -Dradeon="$amd" -Dnouveau=disabled -Dvc4="$vc4" \
-        -Dintel=disabled -Dvmwgfx=disabled \
-        -Domap=disabled -Dexynos=disabled -Dfreedreno=disabled \
-        -Dfreedreno-kgsl=false -Dtegra=disabled -Detnaviv=disabled \
-        -Dtests=false -Dinstall-test-programs=false -Dcairo-tests=disabled \
-        -Dvalgrind=disabled -Dudev=false -Dman-pages=disabled
-    stage libdrm
-    local x="$DESTDIR$X_PREFIX" lib
-    test -f "$x/include/xf86drm.h" || fail "xf86drm.h not staged"
-    test -f "$x/include/libdrm/drm.h" || fail "libdrm/drm.h not staged"
-    test -f "$x/include/libdrm/i915_drm.h" || fail "libdrm/i915_drm.h not staged"
-    soname_check "$x/lib/libdrm.so.2" libdrm.so.2
-    # The FreeBSD branch of xf86drm.c, with the platform-bus and render-node
-    # patches, is what was compiled.
-    grep -q -a -F 'hw.dri.%d.name' "$x/lib/libdrm.so.2" \
-        || fail "libdrm.so.2 lacks the render-node lookup (patches/libdrm not built in?)"
-    note "render-node lookup compiled in"
-    pc_check libdrm "$VERSION"
-    case "$T" in
-        amd64)
-            for lib in amdgpu radeon; do
-                soname_check "$x/lib/libdrm_$lib.so.1" "libdrm_$lib.so.1"
-                needed_check "$x/lib/libdrm_$lib.so.1" libdrm.so.2
-                pc_check "libdrm_$lib" "$VERSION"
-            done
-            test -f "$x/share/libdrm/amdgpu.ids" || fail "libdrm/amdgpu.ids not staged"
-            ;;
-        arm64)
-            test -f "$x/include/libdrm/vc4_packet.h" || fail "libdrm/vc4_packet.h not staged"
-            pc_check libdrm_vc4 "$VERSION"
-            ;;
-    esac
-    for lib in intel freedreno etnaviv nouveau; do
-        if ls "$x"/lib/libdrm_"$lib"* >/dev/null 2>&1; then
-            fail "disabled libdrm component $lib was built"
-        fi
-    done
-}
-
-# =============================================================================
-# Host build tools (built on the runner, never shipped)
-# =============================================================================
-# gperf for fontconfig's object hash (and xcb-util-cursor's, should its
-# pre-generated table ever be rebuilt). Pinned in sources.lock and built with
-# the runner's cc until the toolchain image carries it.
-host_gperf() {
-    GPERF="$BUILD/host/bin/gperf"
-    if [ -x "$GPERF" ] && "$GPERF" --version | head -1 | grep -q " $(lock_field gperf version)\$"; then
-        return 0
-    fi
-    comp "gperf $(lock_field gperf version) [host tool]"
-    fetch gperf
-    (
-        cd "$SRC_DIR"
-        ./configure --prefix="$BUILD/host" >/dev/null
-        make $JOBS
-    )
-    mkdir -p "$BUILD/host/bin"
-    install -m 0755 "$SRC_DIR/src/gperf" "$GPERF"
-    note "$("$GPERF" --version | head -1)"
-}
-
 # =============================================================================
 # X client libraries (nextbsd-xlibs#3): E23 audit 3's order, then the tools'
 # libraries, then what GNUstep needs (E24): xcb-util*, libXcursor,
-# libXcomposite, pixman, expat, freetype, fontconfig, libXft.
+# libXcomposite, libXft. pixman, expat, freetype and fontconfig, which used to
+# be built here, come from nextbsd-displayserver-support (E25).
 # =============================================================================
 
 # Configure switches that keep X.Org autotools packages from building specs and
@@ -754,99 +771,18 @@ build_xcb_util_cursor() {
     pc_check xcb-cursor "$VERSION"
 }
 
-# pixman — pixel manipulation (the server and cairo). meson; moved here from
-# nextbsd-xlibre (E24 Q5) because it has no X dependency and cairo needs it.
-# SIMD paths are the upstream defaults for each arch; no tests, demos, GTK,
-# libpng or OpenMP.
-build_pixman() {
-    comp "pixman [meson cross]"
-    fresh_dirs pixman
-    fetch pixman
-    meson_build -Dtests=disabled -Ddemos=disabled -Dgtk=disabled \
-        -Dlibpng=disabled -Dopenmp=disabled -Dtimers=false -Dgnuplot=false
-    stage pixman
-    so_check libpixman-1.so.0
-    pc_check pixman-1 "$VERSION"
-}
-
-# expat — upstream XML parser for fontconfig (E24 audit 2, option (b)).
-# Base's libbsdxml is expat renamed for base use only, so it is not used.
-# autotools; no xmlwf, examples, tests or DocBook man page.
-build_expat() {
-    comp "expat [autotools cross]"
-    fresh_dirs expat
-    fetch expat
-    autotools_build --without-xmlwf --without-examples --without-tests --without-docbook
-    stage expat
-    so_check libexpat.so.1
-    pc_check expat "$VERSION"
-}
-
-# freetype — font rasteriser (libXft, libXfont2, fontconfig, cairo). meson.
-# zlib and bzip2 from the NextBSD base; no libpng (it would make xlibs depend
-# on nextbsd-gnustep-support; colour bitmap glyphs don't render), no harfbuzz
-# (harfbuzz needs freetype: a loop), no brotli (not in base, so no WOFF2).
-build_freetype() {
-    comp "freetype [meson cross]"
-    fresh_dirs freetype
-    fetch freetype
-    meson_build -Dzlib=system -Dbzip2=enabled -Dpng=disabled -Dharfbuzz=disabled \
-        -Dbrotli=disabled -Dtests=disabled
-    stage freetype
-    so_check libfreetype.so.6
-    lib_needs libfreetype.so.6 libz.so.6 libbz2.so.4
-    if "$CROSS_BINDIR/llvm-readelf" -d "$DESTDIR$X_PREFIX/lib/libfreetype.so.6" | grep -q -E 'NEEDED.*\[lib(png|harfbuzz|brotli)'; then
-        fail "libfreetype links libpng, harfbuzz or brotli"
-    fi
-    pc_check freetype2
-}
-
-# fontconfig — font configuration and matching. meson, with upstream expat and
-# gperf on the build host. Paths, all under /usr/X11 (README "fontconfig"):
-#   config   /usr/X11/etc/fonts (fonts.conf, conf.d -> share/fontconfig/conf.avail)
-#   cache    /usr/X11/var/cache/fontconfig (as Apple's X11 in /usr/X11 had it);
-#            per-user caches stay in ~/.cache/fontconfig
-#   fonts    /System/Library/Fonts, /Local/Library/Fonts,
-#            /Network/Library/Fonts, ~/Library/Fonts (NextBSD's domains, E23
-#            D4), then /usr/X11/share/fonts
-# fc-cache cannot run at install time on the build host (cache-build off); the
-# tools (fc-cache, fc-list, fc-match, ...) are built and shipped. No NLS,
-# iconv, docs or tests.
-build_fontconfig() {
-    host_gperf
-    comp "fontconfig [meson cross]"
-    fresh_dirs fontconfig
-    fetch fontconfig
-    PATH="$BUILD/host/bin:$PATH" meson_build \
-        -Dxml-backend=expat -Ddoc=disabled -Dnls=disabled -Dtests=disabled \
-        -Dtools=enabled -Dcache-build=disabled -Diconv=disabled -Dfontations=disabled \
-        -Ddefault-fonts-dirs=/System/Library/Fonts,/Local/Library/Fonts,/Network/Library/Fonts,~/Library/Fonts \
-        -Dadditional-fonts-dirs=$X_PREFIX/share/fonts
-    stage fontconfig
-    local x="$DESTDIR$X_PREFIX"
-    test -f "$x/etc/fonts/fonts.conf" || fail "$X_PREFIX/etc/fonts/fonts.conf not staged"
-    grep -q "<cachedir>$X_PREFIX/var/cache/fontconfig</cachedir>" "$x/etc/fonts/fonts.conf" \
-        || fail "fonts.conf does not name $X_PREFIX/var/cache/fontconfig"
-    grep -q "<dir>/System/Library/Fonts</dir>" "$x/etc/fonts/fonts.conf" \
-        || fail "fonts.conf does not name /System/Library/Fonts"
-    if grep -n /usr/local "$x/etc/fonts/fonts.conf"; then
-        fail "fonts.conf names /usr/local"
-    fi
-    test -x "$x/bin/fc-cache" || fail "fc-cache not staged"
-    so_check libfontconfig.so.1
-    lib_needs libfontconfig.so.1 libfreetype.so.6 libexpat.so.1
-    pc_check fontconfig "$VERSION"
-}
-
 # libXft — client-side fonts for X (freetype + fontconfig + RENDER). meson.
+# freetype and fontconfig are nextbsd-displayserver-support's, in /usr.
 build_libXft() {
     comp "libXft [meson cross]"
     fresh_dirs libXft
     fetch libXft
+    pc_from_usr freetype2 fontconfig
     meson_build
     stage libXft
     so_check libXft.so.2
-    lib_needs libXft.so.2 libfontconfig.so.1 libfreetype.so.6 libXrender.so.1
+    lib_needs libXft.so.2 libXrender.so.1
+    needs_from_usr libXft.so.2 libfontconfig.so.1 libfreetype.so.6
     pc_check xft "$VERSION"
 }
 
@@ -862,35 +798,85 @@ build_libfontenc() {
     pc_check fontenc "$VERSION"
 }
 
-# libXfont2 — the server's font library. autotools; freetype, no bzip2 font
-# files (upstream default).
+# libXfont2 — the server's font library. autotools; freetype (from
+# nextbsd-displayserver-support, in /usr), no bzip2 font files (upstream
+# default).
 build_libXfont2() {
     comp "libXfont2 [autotools cross]"
     fresh_dirs libXfont2
     fetch libXfont2
+    pc_from_usr freetype2
     autotools_build "${XORG_NODOCS[@]}"
     stage libXfont2
     so_check libXfont2.so.2
-    lib_needs libXfont2.so.2 libfreetype.so.6 libfontenc.so.1
+    lib_needs libXfont2.so.2 libfontenc.so.1
+    needs_from_usr libXfont2.so.2 libfreetype.so.6
     pc_check xfont2 "$VERSION"
 }
 
-# libxkbcommon (and libxkbcommon-x11) — keymap handling (xdotool). meson.
-# xkb data is looked up where nextbsd-xlibre installs xkeyboard-config,
-# /usr/X11/share/X11/xkb, and Compose files in libX11's locale tree. No tools,
-# Wayland, xkbregistry (it needs libxml2), docs or bash completion.
-build_libxkbcommon() {
-    comp "libxkbcommon [meson cross]"
-    fresh_dirs libxkbcommon
+# libxkbcommon-x11 — XKB keymaps and state from an X server (E25 D5). The
+# libxkbcommon core is nextbsd-displayserver-support's, in /usr; only the X11
+# part stays here, because it links libxcb. Upstream builds both from one
+# tree and compiles some of the core's internal sources into
+# libxkbcommon-x11, so the two must be the same release: it is built from the
+# same pinned tarball (the `libxkbcommon` line in sources.lock, which must
+# match displayserver-support's), and the build fails if the sysroot's
+# xkbcommon.pc is any other version.
+#
+# meson with -Denable-x11=true builds the core too (libxkbcommon-x11 is
+# linked against the in-tree core, which only gives it DT_NEEDED
+# libxkbcommon.so.0, the same soname as /usr/lib's). Everything but
+# libxkbcommon-x11's own files (the library, xkbcommon-x11.h,
+# xkbcommon-x11.pc) is deleted before stage, so the core never lands in
+# /usr/X11. The xkb and locale paths are displayserver-support's, so the
+# internal sources compiled in name the same ones: xkb data in
+# /usr/share/X11/xkb, extra path /etc/xkb, Compose data in libX11's
+# /usr/X11/share/X11/locale. No tools, Wayland (E25 D2), xkbregistry (it
+# needs libxml2), docs or bash completion.
+build_libxkbcommon_x11() {
+    comp "libxkbcommon-x11 [meson cross]"
+    local core x f files keep undef missing
+    core=$(sysroot_pkgconf --modversion xkbcommon) \
+        || fail "no xkbcommon.pc in the sysroot (nextbsd-displayserver-support not staged?)"
+    pc_from_usr xkbcommon
+    fresh_dirs libxkbcommon-x11
     fetch libxkbcommon
+    [ "$core" = "$VERSION" ] \
+        || fail "libxkbcommon-x11 would be $VERSION but nextbsd-displayserver-support's libxkbcommon is $core: bump both pins together"
+    note "version lock ok: libxkbcommon $core (nextbsd-displayserver-support) = libxkbcommon-x11 $VERSION"
     meson_build -Denable-tools=false -Denable-wayland=false -Denable-xkbregistry=false \
         -Denable-docs=false -Denable-bash-completion=false -Denable-x11=true \
-        -Dxkb-config-root=$X_PREFIX/share/X11/xkb -Dx-locale-root=$X_PREFIX/share/X11/locale
-    stage libxkbcommon
-    so_check libxkbcommon.so.0 libxkbcommon-x11.so.0
-    lib_needs libxkbcommon-x11.so.0 libxcb-xkb.so.1
-    pc_check xkbcommon "$VERSION"
+        -Dxkb-config-root=/usr/share/X11/xkb -Dxkb-config-extra-path=/etc/xkb \
+        -Dx-locale-root=$X_PREFIX/share/X11/locale
+    # Keep only libxkbcommon-x11's own files.
+    x="$COMP_ROOT$X_PREFIX"
+    test -f "$x/include/xkbcommon/xkbcommon-x11.h" || fail "xkbcommon-x11.h not installed"
+    ls "$x"/lib/libxkbcommon-x11.so.0* >/dev/null 2>&1 || fail "libxkbcommon-x11.so.0 not installed"
+    files=$(cd "$x" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort)
+    for f in $files; do
+        case "$f" in
+            lib/libxkbcommon-x11.so|lib/libxkbcommon-x11.so.*) ;;
+            include/xkbcommon/xkbcommon-x11.h) ;;
+            lib/pkgconfig/xkbcommon-x11.pc|libdata/pkgconfig/xkbcommon-x11.pc|share/pkgconfig/xkbcommon-x11.pc) ;;
+            *) rm -f "$x/$f"; note "dropped core file $X_PREFIX/$f (nextbsd-displayserver-support has it in /usr)" ;;
+        esac
+    done
+    stage libxkbcommon-x11
+    x="$DESTDIR$X_PREFIX"
+    keep=$(cd "$COMP_ROOT$X_PREFIX" && find . ! -type d | sed 's#^\./##' | LC_ALL=C sort | tr '\n' ' ')
+    note "libxkbcommon-x11 installs: $keep"
+    so_check libxkbcommon-x11.so.0
+    lib_needs libxkbcommon-x11.so.0 libxcb.so.1 libxcb-xkb.so.1
+    needs_from_usr libxkbcommon-x11.so.0 libxkbcommon.so.0
+    # Every xkb_* symbol it takes from the core is exported by /usr's core.
+    undef=$("$CROSS_BINDIR/llvm-nm" -D --undefined-only "$x/lib/libxkbcommon-x11.so.0" | awk '{print $NF}' | sed 's/@.*//' | { grep '^xkb_' || true; } | LC_ALL=C sort -u)
+    missing=$(printf '%s\n' "$undef" | sed '/^$/d' | LC_ALL=C comm -23 - <("$CROSS_BINDIR/llvm-nm" -D --defined-only "$SYSROOT/usr/lib/libxkbcommon.so.0" | awk '{print $NF}' | sed 's/@.*//' | LC_ALL=C sort -u))
+    [ -z "$missing" ] || fail "libxkbcommon-x11 needs core symbols that /usr/lib/libxkbcommon.so.0 does not export: $missing"
+    note "the $(printf '%s\n' "$undef" | sed '/^$/d' | wc -l) xkb_* symbols it imports are all exported by /usr/lib/libxkbcommon.so.0"
     pc_check xkbcommon-x11 "$VERSION"
+    [ "$(sysroot_pkgconf --modversion xkbcommon-x11)" = "$(sysroot_pkgconf --modversion xkbcommon)" ] \
+        || fail "xkbcommon-x11.pc and xkbcommon.pc versions differ"
+    note "xkbcommon-x11.pc $(sysroot_pkgconf --modversion xkbcommon-x11) = xkbcommon.pc $(sysroot_pkgconf --modversion xkbcommon)"
 }
 
 # =============================================================================
@@ -903,7 +889,6 @@ build_libxkbcommon() {
 COMPONENTS="
     xorgproto
     xtrans
-    libdrm
     xcb-proto
     libXau
     libXdmcp
@@ -930,14 +915,10 @@ COMPONENTS="
     xcb-util-image
     xcb-util-renderutil
     xcb-util-cursor
-    pixman
-    expat
-    freetype
-    fontconfig
     libXft
     libfontenc
     libXfont2
-    libxkbcommon
+    libxkbcommon-x11
 "
 
 if [ $# -gt 0 ]; then
@@ -952,10 +933,16 @@ fi
 
 echo "nextbsd-xlibs: building [$(echo $COMPONENTS)] for $T/$TA into $DESTDIR$X_PREFIX"
 mkdir -p "$DESTDIR"
+comp "sysroot: NextBSD base + nextbsd-displayserver-support"
+displayserver_support_check
 base_list
 for c in $COMPONENTS; do
     "build_$(printf '%s' "$c" | tr - _)"
 done
+
+comp "artifact: nothing nextbsd-displayserver-support provides"
+no_moved_copies "$DESTDIR" "artifact"
+no_moved_copies "$SYSROOT" "sysroot"
 
 echo
 echo "==> staged into $DESTDIR:"
