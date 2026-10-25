@@ -714,8 +714,10 @@ build_libXpm() {
 
 # libXaw — the Athena widget set (xterm's menus and scrollbar,
 # nextbsd-xlibre#18). autotools. Xaw7 only: the legacy Xaw6 (libXaw6.so.6) is
-# off. libtool names the library libXaw7.so.7 (its soname) and upstream adds
-# the libXaw.so.7 and libXaw.so links to it; xaw7.pc. Unit tests off.
+# off. The file is libXaw7.so.7 (libtool's name, from libXaw7.la) but its
+# soname is libXaw.so.7, the name upstream's libXaw.so.7 link gives it and
+# what programs record in DT_NEEDED; libXaw.so links to libXaw7.so. xaw7.pc.
+# Unit tests off.
 build_libXaw() {
     comp "libXaw [autotools cross]"
     fresh_dirs libXaw
@@ -726,12 +728,12 @@ build_libXaw() {
     for h in SimpleMenu Box SmeBSB SmeLine MenuButton Form XawImP Scrollbar; do
         test -f "$x/include/X11/Xaw/$h.h" || fail "X11/Xaw/$h.h not staged"
     done
-    so_check libXaw7.so.7
     [ "$(readlink "$x/lib/libXaw.so.7")" = libXaw7.so.7 ] || fail "libXaw.so.7 does not link to libXaw7.so.7"
+    so_check libXaw.so.7
     [ "$(readlink "$x/lib/libXaw.so")" = libXaw7.so ] || fail "libXaw.so does not link to libXaw7.so"
     [ ! -e "$x/lib/libXaw6.so.6" ] && [ ! -e "$x/lib/libXaw.so.6" ] && [ ! -e "$x/lib/pkgconfig/xaw6.pc" ] \
         || fail "Xaw6 staged"
-    lib_needs libXaw7.so.7 libXmu.so.6 libXpm.so.4 libXt.so.6 libXext.so.6 libX11.so.6
+    lib_needs libXaw.so.7 libXmu.so.6 libXpm.so.4 libXt.so.6 libXext.so.6 libX11.so.6
     pc_check xaw7 "$VERSION"
 }
 
