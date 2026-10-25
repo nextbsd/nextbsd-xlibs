@@ -214,7 +214,8 @@ EOF
 }
 
 # autotools_build [configure options...]: upstream configure in --host mode with
-# the arch's CONFIG_SITE, out of tree; make; make install into $COMP_ROOT.
+# the arch's CONFIG_SITE, out of tree; make; make install into $COMP_ROOT
+# (both given MAKE_VARS, below).
 autotools_build() {
     (
         cd "$COMP_BUILD"
@@ -226,10 +227,15 @@ autotools_build() {
             --enable-shared --disable-static \
             --disable-dependency-tracking --disable-silent-rules \
             "$@"
-        make $JOBS
-        make install DESTDIR="$COMP_ROOT"
+        make $JOBS "${MAKE_VARS[@]}"
+        make install DESTDIR="$COMP_ROOT" "${MAKE_VARS[@]}"
     )
 }
+
+# make variables autotools_build passes to make and make install, for a
+# component that sets them (libXpm); empty otherwise. Variables given on
+# make's command line reach every sub-make.
+MAKE_VARS=()
 
 # What nextbsd-displayserver-support provides in /usr (E25) and this repo
 # used to build into /usr/X11 (libdrm, pixman, expat, freetype, fontconfig,
@@ -677,6 +683,58 @@ build_libXmu() {
     pc_check xmuu "$VERSION"
 }
 
+# libXpm — the XPM pixmap format, library only: Xaw7's pixmap loader needs it
+# (nextbsd-xlibs#11). autotools. Upstream has no switch for its sxpm and cxpm
+# tools (sxpm is built whenever libXt is found), so make is given empty
+# bin_PROGRAMS and appman_PRE (their man pages): neither is built or
+# installed. Compressed pixmaps are off (--disable-open-zfile, which also
+# turns off the .Z/.gz lookup): libXpm would fork gzip, compress and
+# uncompress at paths configure finds on the Linux build host, and nothing
+# NextBSD ships reads compressed XPM files. No gettext (only the tools use
+# it), no unit tests.
+build_libXpm() {
+    comp "libXpm [autotools cross]"
+    fresh_dirs libXpm
+    fetch libXpm
+    MAKE_VARS=(bin_PROGRAMS= appman_PRE=)
+    autotools_build "${XORG_NODOCS[@]}" --disable-open-zfile --disable-unit-tests \
+        --without-glib --without-localedir
+    MAKE_VARS=()
+    stage libXpm
+    local x="$DESTDIR$X_PREFIX"
+    test -f "$x/include/X11/xpm.h" || fail "X11/xpm.h not staged"
+    [ ! -e "$x/bin/sxpm" ] && [ ! -e "$x/bin/cxpm" ] || fail "sxpm or cxpm staged"
+    [ ! -e "$x/share/man/man1/sxpm.1" ] && [ ! -e "$x/share/man/man1/cxpm.1" ] || fail "sxpm.1 or cxpm.1 staged"
+    ! grep -q '^#define USE_GETTEXT 1' "$COMP_BUILD/config.h" || fail "libXpm was built with gettext"
+    grep -q '^#define NO_ZPIPE 1' "$COMP_BUILD/config.h" || fail "libXpm was built with compressed-file pipes"
+    so_check libXpm.so.4
+    lib_needs libXpm.so.4 libX11.so.6
+    pc_check xpm "$VERSION"
+}
+
+# libXaw — the Athena widget set (xterm's menus and scrollbar,
+# nextbsd-xlibre#18). autotools. Xaw7 only: the legacy Xaw6 (libXaw6.so.6) is
+# off. libtool names the library libXaw7.so.7 (its soname) and upstream adds
+# the libXaw.so.7 and libXaw.so links to it; xaw7.pc. Unit tests off.
+build_libXaw() {
+    comp "libXaw [autotools cross]"
+    fresh_dirs libXaw
+    fetch libXaw
+    autotools_build "${XORG_NODOCS[@]}" --disable-xaw6 --enable-xaw7 --disable-unit-tests
+    stage libXaw
+    local x="$DESTDIR$X_PREFIX" h
+    for h in SimpleMenu Box SmeBSB SmeLine MenuButton Form XawImP Scrollbar; do
+        test -f "$x/include/X11/Xaw/$h.h" || fail "X11/Xaw/$h.h not staged"
+    done
+    so_check libXaw7.so.7
+    [ "$(readlink "$x/lib/libXaw.so.7")" = libXaw7.so.7 ] || fail "libXaw.so.7 does not link to libXaw7.so.7"
+    [ "$(readlink "$x/lib/libXaw.so")" = libXaw7.so ] || fail "libXaw.so does not link to libXaw7.so"
+    [ ! -e "$x/lib/libXaw6.so.6" ] && [ ! -e "$x/lib/libXaw.so.6" ] && [ ! -e "$x/lib/pkgconfig/xaw6.pc" ] \
+        || fail "Xaw6 staged"
+    lib_needs libXaw7.so.7 libXmu.so.6 libXpm.so.4 libXt.so.6 libXext.so.6 libX11.so.6
+    pc_check xaw7 "$VERSION"
+}
+
 # libxkbfile — XKB file handling (server, xkbcomp, setxkbmap). meson.
 build_libxkbfile() {
     comp "libxkbfile [meson cross]"
@@ -907,6 +965,8 @@ COMPONENTS="
     libSM
     libXt
     libXmu
+    libXpm
+    libXaw
     libxkbfile
     libXcursor
     libXcomposite
