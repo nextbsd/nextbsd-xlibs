@@ -150,6 +150,8 @@ In build order (E23 audit 3, section 2.2).
 | `libSM` | 1.2.6 | autotools | `libSM.so.6` (`uuid_create` from libc) | nextbsd/nextbsd-xlibs#3 |
 | `libXt` | 1.3.1 | autotools | `libXt.so.6` | nextbsd/nextbsd-xlibs#3 |
 | `libXmu` | 1.3.1 | autotools | `libXmu.so.6`, `libXmuu.so.1` | nextbsd/nextbsd-xlibs#3 |
+| `libXpm` | 3.5.20 | autotools | `libXpm.so.4`, `X11/xpm.h`, `xpm.pc`; library only (no `sxpm`, `cxpm`), no compressed-file pipes | nextbsd/nextbsd-xlibs#11 |
+| `libXaw` | 1.0.16 | autotools | Xaw7 only: `libXaw7.so.7` (soname `libXaw.so.7`) with the `libXaw.so.7` and `libXaw.so` links, `X11/Xaw/` headers, `xaw7.pc`; no Xaw6 | nextbsd/nextbsd-xlibs#11 |
 | `libxkbfile` | 1.2.0 | meson | `libxkbfile.so.1` | nextbsd/nextbsd-xlibs#3 |
 | `libXcursor` | 1.2.3 | autotools | `libXcursor.so.1` | nextbsd/nextbsd-xlibs#3 (E24) |
 | `libXcomposite` | 0.4.7 | meson | `libXcomposite.so.1` | nextbsd/nextbsd-xlibs#3 (E24) |

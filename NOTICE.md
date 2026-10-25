@@ -37,6 +37,8 @@ The top-level **`LICENSE` (BSD 2-Clause)** covers only what this repo authors:
 | `libSM` | X.Org, `xorg/lib/libsm` | 1.2.6 | MIT/X11-style (`COPYING`) |
 | `libXt` | X.Org, `xorg/lib/libxt` | 1.3.1 | MIT/X11-style (`COPYING`) |
 | `libXmu` | X.Org, `xorg/lib/libxmu` | 1.3.1 | MIT/X11-style (`COPYING`) |
+| `libXpm` | X.Org, `xorg/lib/libxpm` | 3.5.20 | MIT/X11-style (`COPYING`) |
+| `libXaw` | X.Org, `xorg/lib/libxaw` | 1.0.16 | MIT/X11-style, per file (`COPYING`) |
 | `libxkbfile` | X.Org, `xorg/lib/libxkbfile` | 1.2.0 | MIT/X11-style (`COPYING`) |
 | `libXcursor` | X.Org, `xorg/lib/libxcursor` | 1.2.3 | HPND (`COPYING`) |
 | `libXcomposite` | X.Org, `xorg/lib/libxcomposite` | 0.4.7 | MIT/X11-style (`COPYING`) |
