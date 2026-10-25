@@ -1,7 +1,8 @@
 # Shared part of the autotools CONFIG_SITE files (amd64.site, arm64.site).
 #
 # Expects in the environment (exported by build-xlibs.sh):
-#   SYSROOT       the staged NextBSD base, with earlier components in /usr/X11
+#   SYSROOT       the staged NextBSD base and nextbsd-displayserver-support,
+#                 with earlier components in /usr/X11
 #   CROSS_BINDIR  the toolchain image's pinned clang/lld 19.1.7
 #   XLIBS_CROSS   this directory's parent (cross/)
 # and xlibs_triple from the per-arch file that sources this one.
@@ -32,9 +33,11 @@ CC_FOR_BUILD=cc
 CPPFLAGS_FOR_BUILD="-I$SYSROOT/usr/X11/include"
 
 # pkgconf (ISC), never freedesktop's GPL pkg-config. Only the sysroot's .pc
-# directories are searched, and -I/-L results are prefixed with the sysroot.
+# directories are searched, and -I/-L results are prefixed with the sysroot:
+# the base and nextbsd-displayserver-support (freetype, fontconfig, ...) in
+# /usr/libdata/pkgconfig first, then NextBSD X in /usr/X11/lib/pkgconfig.
 PKG_CONFIG=pkgconf
-PKG_CONFIG_LIBDIR="$SYSROOT/usr/X11/lib/pkgconfig:$SYSROOT/usr/libdata/pkgconfig"
+PKG_CONFIG_LIBDIR="$SYSROOT/usr/libdata/pkgconfig:$SYSROOT/usr/X11/lib/pkgconfig"
 PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
 export PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR
 

@@ -19,7 +19,6 @@ The top-level **`LICENSE` (BSD 2-Clause)** covers only what this repo authors:
 |---|---|---|---|
 | `xorgproto` | X.Org, `xorg/proto/xorgproto` | 2026.1 | MIT/X11-style, per protocol (`COPYING-*` in the tarball) |
 | `xtrans` | X.Org, `xorg/lib/libxtrans` | 1.6.0 | MIT/X11-style (`COPYING` in the tarball) |
-| `libdrm` | freedesktop.org, `mesa/libdrm` | 2.4.134 | MIT/X11-style, in each source file's header (the tarball has no `COPYING`) |
 | `xcb-proto` | X.Org, `xorg/proto/xcbproto` | 1.17.0 | MIT/X11 (`COPYING`). Build input only; not in the artifact |
 | `libXau` | X.Org, `xorg/lib/libxau` | 1.0.12 | MIT/X11-style (`COPYING`) |
 | `libXdmcp` | X.Org, `xorg/lib/libxdmcp` | 1.1.5 | MIT/X11-style (`COPYING`) |
@@ -46,18 +45,13 @@ The top-level **`LICENSE` (BSD 2-Clause)** covers only what this repo authors:
 | `xcb-util-image` | X.Org, `xorg/lib/libxcb-image` | 0.4.1 | MIT/X11 (`COPYING`) |
 | `xcb-util-renderutil` | X.Org, `xorg/lib/libxcb-render-util` | 0.3.10 | MIT/X11 (`COPYING`) |
 | `xcb-util-cursor` | X.Org, `xorg/lib/libxcb-cursor` | 0.1.6 | MIT/X11 (`COPYING`) |
-| `pixman` | freedesktop.org, `pixman/pixman` | 0.46.4 | MIT (`COPYING`) |
-| `expat` | libexpat, `libexpat/libexpat` | 2.9.0 | MIT (`COPYING`) |
-| `freetype` | FreeType, `freetype/freetype` | 2.15.0 | FreeType License (FTL), taken from the FTL/GPLv2 dual licence (`LICENSE.TXT`, `docs/FTL.TXT`) |
-| `fontconfig` | freedesktop.org, `fontconfig/fontconfig` | 2.18.3 | HPND/MIT-style (`COPYING`) |
 | `libXft` | X.Org, `xorg/lib/libxft` | 2.3.9 | HPND (`COPYING`) |
 | `libfontenc` | X.Org, `xorg/lib/libfontenc` | 1.1.9 | MIT/X11-style (`COPYING`) |
 | `libXfont2` | X.Org, `xorg/lib/libxfont` | 2.0.9 | MIT/X11-style, per file (`COPYING`) |
-| `libxkbcommon` | xkbcommon, `xkbcommon/libxkbcommon` | 1.13.2 | MIT/X11-style, per file (`LICENSE`) |
+| `libxkbcommon-x11` | xkbcommon, `xkbcommon/libxkbcommon` (the `libxkbcommon` tarball; only libxkbcommon-x11 is installed) | 1.13.2 | MIT/X11-style, per file (`LICENSE`) |
 
-Host build tools are built from `sources.lock` on the build runner and are not
-shipped:
-
-| Tool | Upstream | Version | Licence |
-|---|---|---|---|
-| `gperf` | GNU, `gperf` | 3.3 | GPL-3.0-or-later (build host only; nothing links it, and its output, fontconfig's hash table, is not covered by the GPL) |
+libdrm, pixman, expat, freetype, fontconfig, the gperf host tool and the
+libxkbcommon core moved to
+[nextbsd-displayserver-support](https://github.com/nextbsd/nextbsd-displayserver-support)
+(E25), whose `NOTICE.md` has their rows. libXft, libXfont2 and
+libxkbcommon-x11 link them from `/usr`.

@@ -2,18 +2,20 @@
 #
 # One line per component:  <name> <version> <sha256> <url>
 # <name> matches build_<name> in build-xlibs.sh (hyphens as underscores) and
-# patches/<name>/. build-xlibs.sh downloads <url>, refuses it unless its
+# patches/<name>/ (except libxkbcommon, which build_libxkbcommon_x11 uses). build-xlibs.sh downloads <url>, refuses it unless its
 # SHA-256 is <sha256>, and unpacks it. Only upstream release tarballs (or tag
 # archives) are listed: no FreeBSD packages or ports distfiles, no xsrc or
 # xenocara. Bumping a version is a deliberate change to this file.
 #
 # xorg util-macros 1.20.2 is not listed: the toolchain image pins and installs
 # it (nextbsd-toolchain#13), and it is a build tool only.
+#
+# libdrm, pixman, expat, freetype, fontconfig, the gperf host tool and the
+# libxkbcommon core moved to nextbsd-displayserver-support (E25); their pins
+# are in its sources.lock.
 
 xorgproto  2026.1  f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8290  https://xorg.freedesktop.org/archive/individual/proto/xorgproto-2026.1.tar.xz
 xtrans     1.6.0   faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92  https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.6.0.tar.xz
-# libdrm: SHA-256 also matches FreeBSD ports' graphics/libdrm/distinfo.
-libdrm     2.4.134 ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95  https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz
 
 # ---- X client libraries (nextbsd-xlibs#3), in build order ----
 # xcb-proto is build input only: its XML and xcbgen go into the sysroot for
@@ -47,18 +49,15 @@ xcb-util-image      0.4.1   ccad8ee5dadb1271fd4727ad14d9bd77a64e505608766c4e9826
 xcb-util-renderutil 0.3.10  3e15d4f0e22d8ddbfbb9f5d77db43eacd7a304029bf25a6166cc63caa96d04ba  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-renderutil-0.3.10.tar.xz
 xcb-util-cursor     0.1.6   fdeb8bd127873519be5cc70dcd0d3b5d33b667877200f9925a59fdcad8f7a933  https://xorg.freedesktop.org/archive/individual/lib/xcb-util-cursor-0.1.6.tar.xz
 
-# ---- pixman, expat and the font stack (E24 Q5; freetype without libpng) ----
-# libxkbcommon is a GitHub tag archive: upstream publishes no release tarball.
-pixman              0.46.4  a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239  https://xorg.freedesktop.org/archive/individual/lib/pixman-0.46.4.tar.xz
-expat               2.9.0   1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051  https://github.com/libexpat/libexpat/releases/download/R_2_9_0/expat-2.9.0.tar.xz
-freetype            2.15.0  93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5  https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.xz
-fontconfig          2.18.3  4f7b554a38cdf78c033f666c8871f3749e14a094f65a07f630c91ed0b43d35e3  https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/2.18.3/fontconfig-2.18.3.tar.xz
+# ---- font libraries (E24 Q5; freetype and fontconfig are nextbsd-displayserver-support's) ----
 libXft              2.3.9   60a25b78945ed6932635b3bb1899a517d31df7456e69867ffba27f89ff3976f5  https://xorg.freedesktop.org/archive/individual/lib/libXft-2.3.9.tar.xz
 libfontenc          1.1.9   9d8392705cb10803d5fe1d27d236cbab3f664e26841ce01916bbbe430cf273e2  https://xorg.freedesktop.org/archive/individual/lib/libfontenc-1.1.9.tar.xz
 libXfont2           2.0.9   f042a370666815e7b941e9b7019024755bd1c6c2954afbfa515af378251799e2  https://xorg.freedesktop.org/archive/individual/lib/libXfont2-2.0.9.tar.xz
-libxkbcommon        1.13.2  acc4d5f7c3cbba5f9f8d08d8bdbeede84ecede46792f47929aa9321873385528  https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.13.2.tar.gz
 
-# ---- host build tools (built on the runner, used at build time, never shipped) ----
-# gperf: fontconfig generates its object hash with it. Not in the toolchain
-# image yet; built here from source until it is (README.md, "Host build tools").
-gperf               3.3     fd87e0aba7e43ae054837afd6cd4db03a3f2693deb3619085e6ed9d8d9604ad8  https://mirrors.kernel.org/gnu/gperf/gperf-3.3.tar.gz
+# ---- libxkbcommon-x11 (E25 D5) ----
+# Built from the same tarball as nextbsd-displayserver-support's libxkbcommon
+# core and version-locked to it: this line must stay identical to the
+# libxkbcommon line in nextbsd-displayserver-support's sources.lock, and
+# build-xlibs.sh fails if the staged core's xkbcommon.pc is any other version.
+# A GitHub tag archive: upstream publishes no release tarball.
+libxkbcommon        1.13.2  acc4d5f7c3cbba5f9f8d08d8bdbeede84ecede46792f47929aa9321873385528  https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.13.2.tar.gz
