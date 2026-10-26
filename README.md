@@ -66,7 +66,7 @@ unpacks into `.build/src/` and builds out of tree under `.build/`.
 
 ## Build model
 
-`build-xlibs.sh` runs inside the `nextbsd-kernel-toolchain` container (the
+`build-xlibs.sh` runs inside the `nextbsd-toolchain` container (the
 pinned clang/lld 19.1.7 in `/usr/lib/llvm-19`, meson, ninja, cmake, pkgconf,
 autotools and X.Org util-macros) with compat's `continuous` base, then
 `nextbsd-displayserver-support`'s `continuous` artifact, extracted as the
